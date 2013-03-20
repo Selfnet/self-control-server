@@ -18,32 +18,39 @@ class Sender():
         self.connManager.start()
 
     def setColor(self, r,g,b):
+        """Set permanent LED color to given RGB (0-255)."""
         logging.info("setting color %03d|%03d|%03d"%(r,g,b))
         self.connManager.send(COMMANDS['setColor'] + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
     
     def fadeToColor(self, r, g, b, duration):
+        """Fade LEDs to given RGB (0-255) in given duration (1 = 0.1 seconds)"""
         logging.info("fade to color %03d|%03d|%03d in %.1f seconds"%(r,g,b,duration*0.1))
         self.connManager.send(COMMANDS['fadeToColor'] + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b) + struct.pack('B', duration))
         time.sleep((duration+2)*0.1)
         logging.debug("received: %s"%self.connManager.recv())
 
     def light(self, state, lightnr=1):
+        """Set lightnr (1 = cold bright light) to given state: 0 (off) or 1 (on)"""
         state = state + 1
         self.connManager.send(COMMANDS['light'] + struct.pack('B', lightnr) + struct.pack('B', state))
 
     def configureAutofade(self, time):
         self.connManager.send(COMMANDS['configureAutofade'] + struct.pack('>H', time))
 
-    def setSmoothfadeTime(self, time):
-        self.connManager.send(COMMANDS['setSmoothfadeTime'] + struct.pack('>H', time))
+    def setSmoothfadeTime(self, millis):
+        """Set the time in milliseconds (1-65535) between 2 fading steps"""
+        self.connManager.send(COMMANDS['setSmoothfadeTime'] + struct.pack('>H', millis))
 
     def white(self):
+        """Shortcut to set LEDs permanent white (full brightness)"""
         self.setColor(254, 254, 254)
 
     def black(self):
+        """Shortcut to set LEDs permanent dark"""
         self.setColor(0, 0, 0)
         
     def police(self):
+        """Start Kotzmode. Interrupt with Ctrl+C"""
         while True:
             for i in range(0,2):
                 print "red"
@@ -67,6 +74,7 @@ class Sender():
             time.sleep(0.08)
             
     def police2(self):
+        """Start another Kotzmode. Interrupt with Ctrl+C"""
         while True:
             for i in range(0,2):
                 self.setColor(255,255,0)
@@ -84,6 +92,10 @@ class Sender():
             time.sleep(0.05)
     
     def strobe(self,sleep=0.05):
+        """Start strobemode. Interrupt with Ctrl+C
+        
+        params:
+        sleep: time between 2 flashes in seconds"""
         while True:
             self.setColor(255,255,255)
             time.sleep(sleep*0.5)
@@ -91,6 +103,12 @@ class Sender():
             time.sleep(sleep)
     
     def fadeSoftRandom(self,sleep=0.1,minchange=1,maxchange=7):
+        """Start automatic fading mode. Fade in software, much networktraffic - don't use. Interrupt with Ctrl+C
+        
+        params:
+        sleep: waiting time between 2 fadingsteps in seconds
+        minchange: minimum stepsize
+        maxchange: maximum stepsize"""
         col = [random.randrange(0,255), random.randrange(0,255), random.randrange(0,255)]
         change = [random.randrange(minchange, maxchange), random.randrange(minchange, maxchange), random.randrange(minchange, maxchange)]
         while True:
@@ -106,10 +124,19 @@ class Sender():
             time.sleep(sleep)
             
     def fadeHardRandom(self,mintime=1,maxtime=255):
+        """Start automatic fading mode. Fade in hardware - use this. Interrupt with Ctrl+C
+        
+        params:
+        minchange: minimum stepsize
+        maxchange: maximum stepsize"""
         while True:
             self.fadeToColor(random.randrange(0,255), random.randrange(0,255), random.randrange(0,255), random.randrange(mintime,maxtime))
 
     def randomColor(self, sleep=1):
+        """Set all sleep seconds a new random color. Interrupt with Ctrl+C
+        
+        params:
+        sleep: sleeptime between 2 colors"""
         while True:
             r = random.randrange(0,255)
             g = random.randrange(0,255)
@@ -118,6 +145,7 @@ class Sender():
             time.sleep(sleep)
             
     def stop(self):
+        """Stop the Sender. Close all networkconnections and stop."""
         logging.debug('Received stop...')
         self.connManager.stop()
 
@@ -135,12 +163,15 @@ class ConnectionManager(threading.Thread):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     
     def run(self):
+        print 'ConnectionManager started. Trying to connect...'
+        logging.info('ConnectionManager started. Trying to connect...')
         while not self.stopped:
             if not self.connected:
                 self.tryconnect()
             else:
                 self.recvLock.acquire(False)
                 try:
+                    self.send("keepalive", log=False)
                     self.lastReceived = 'untouched'
                     self.lastReceived = self.sock.recv(4096)
                     if not self.stopped:
@@ -153,8 +184,13 @@ class ConnectionManager(threading.Thread):
                 except socket.timeout, e:
                     pass
                 except Exception, e:
-                    logging.debug('in receive exception: %s'%str(e))
+                    logging.debug('in statechecker exception: %s'%str(e))
                     self.connectionReset()
+        logging.info('Closing connection...')
+        try:
+            self.stop()
+        except Exception, e:
+            pass
         logging.info('Connection closed, ConnectionManager stopped')
     
     def connectionReset(self):
@@ -211,16 +247,19 @@ class ConnectionManager(threading.Thread):
                 time.sleep(0.1)
                 logging.debug("Trying to connect...")
 
-    def send(self, msg):
+    def send(self, msg, log=True):
         if self.connected:
-            logging.info("waiting for sendLock...")
+            if log:
+                logging.debug("waiting for sendLock...")
             self.sendLock.acquire()
-            logging.info("sendLock acquired")
-            logging.info("sending unicode %s"%msg)
+            if log:
+                logging.debug("sendLock acquired")
+                logging.info("sending unicode %s"%msg)
             binmsg = ''
             for c in msg:
                 binmsg += Helper.format8bit(bin(struct.unpack('B',c)[0])) + ' '
-            logging.info("sending binary %s"%binmsg)
+            if log:
+                logging.info("sending binary %s"%binmsg)
             try:
                 self.sock.sendall(msg)
             except Exception, e:
@@ -255,7 +294,7 @@ def main():
     s = Sender()
 
     #######################
-    #fancy startup shit
+    #fancy startup shit (history, tabcompletion & Co)
     #######################
     import atexit
     import os
