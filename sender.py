@@ -39,19 +39,16 @@ class Sender():
         logging.info("setting color of led %d %03d|%03d|%03d"%(led,r,g,b))
         self.connManager.send(COMMANDS['setColor'] + struct.pack('B', led) + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
     
-    def fadeToColor(self, led, r, g, b, millis, blocking=True):
-        """Fade LED to given RGB (0-255) in given time (0-65535).
-        
-        If blocking=True block until fading finished.
-        """
+    def setAllColor(self, r, g, b):
+        """Set master for LED"""
+        logging.info("setting all leds to %03d|%03d|%03d"%(r,g,b))
+        for i in range(0,4):
+            self.setColor(i, r, g, b)
+    
+    def fadeToColor(self, led, millis, r, g, b):
+        """Fade LED to given RGB (0-255) in given time (0-65535)."""
         logging.info("fade to color %03d|%03d|%03d in %.3f seconds"%(r,g,b,millis/1000.0))
         self.connManager.send(COMMANDS['fadeToColor'] + struct.pack('B', led) + struct.pack('>H', millis) + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
-        if blocking:
-            print "waiting for response"
-            logging.info("waiting for response")
-            recv = self.connManager.recv()
-            logging.info("received: %s"%recv)
-            print "received: %s"%recv
 
     def white(self):
         """Shortcut to set LEDs permanent white (full brightness)"""
