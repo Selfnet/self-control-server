@@ -3,7 +3,8 @@ import logging
 
 #commands: binary -> commandbyte + args
 COMMANDS = {
-    'setColor': struct.pack('B', 102),#struct(100+r+g+b) with r,g,b in range 0-255
+    'setMaster': struct.pack('B', 101),#struct(code+led+master)
+    'setColor': struct.pack('B', 102),#struct(code+led+r+g+b) with r,g,b in range 0-255
     #'fadeToColor': struct.pack('B', 101),#struct(101+r+g+b+time) with r,g,b in 0-255, time in range 0-255 with 1 = 0.1sec
     #'light': struct.pack('B', 102),#struct(102+lightnr+state) with state = [0|1]
     #'configureAutofade': struct.pack('B', 103),#struct(103+time) with 2bytes time in milliseconds
@@ -16,8 +17,19 @@ class Sender():
         self.port = port
         self.connManager = ConnectionManager(host, port)
         self.connManager.start()
+        
+    def setMaster(self, led, master):
+        """Set master for LED"""
+        logging.info("setting master for led %d to %d"%(led,master))
+        self.connManager.send(COMMANDS['setMaster'] + struct.pack('B', led) + struct.pack('B', master))
+        
+    def setAllMaster(self, master):
+        """Set master for LED"""
+        logging.info("setting master all leds to %d"%(master))
+        for i in range(0,4):
+            self.connManager.send(COMMANDS['setMaster'] + struct.pack('B', i) + struct.pack('B', master))
 
-    def setColor(self, r, g, b, led=3):
+    def setColor(self, r, g, b, led):
         """Set permanent LED color to given RGB (0-255)."""
         logging.info("setting color of led %d %03d|%03d|%03d"%(led,r,g,b))
         self.connManager.send(COMMANDS['setColor'] + struct.pack('B', led) + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
@@ -49,22 +61,34 @@ class Sender():
         """Shortcut to set LEDs permanent dark"""
         self.setColor(0, 0, 0)
         
-    def police(self, sleep=0.1):
+    def police(self, sleep=0.05):
         """Start Kotzmode. Interrupt with Ctrl+C"""
         while True:
+            self.setColor(0,0,0,0)
+            self.setColor(0,0,0,1)
+            self.setColor(0,0,0,2)
+            self.setColor(0,0,0,3)
             for i in range(0,2):
+                self.setColor(0,0,255,0)
+                self.setColor(0,0,255,2)
                 self.setColor(0,0,255,3)
                 time.sleep(sleep)
-                self.setColor(255,0,0,3)
+                self.setColor(0,0,0,0)
+                self.setColor(0,0,0,2)
+                self.setColor(0,0,0,3)
                 time.sleep(sleep)
+            time.sleep(sleep*3)
             for i in range(0,2):
-                print "red"
-                self.setColor(255,0,0)
+                self.setColor(255,0,0,0)
+                self.setColor(255,0,0,2)
+                self.setColor(255,0,0,1)
                 time.sleep(sleep)
-                print "blue"
-                self.setColor(0,0,255)
+                self.setColor(0,0,0,0)
+                self.setColor(0,0,0,2)
+                self.setColor(0,0,0,1)
                 time.sleep(sleep)
-            
+            time.sleep(sleep*3)
+
     def police2(self):
         """Start another Kotzmode. Interrupt with Ctrl+C"""
         while True:
@@ -88,11 +112,12 @@ class Sender():
         
         params:
         sleep: time between 2 flashes in seconds"""
+        self.setAllMaster(0)
         while True:
-            self.setColor(255,255,255)
-            time.sleep(sleep*0.5)
-            self.setColor(0,0,0)
-            time.sleep(sleep)
+            self.setColor(255,255,255,0)
+            time.sleep(sleep*0.2)
+            self.setColor(0,0,0,0)
+            time.sleep(sleep*0.8)
     
     def fadeSoftRandom(self,sleep=0.1,minchange=1,maxchange=7):
         """Start automatic fading mode. Fade in software, much networktraffic - don't use. Interrupt with Ctrl+C
