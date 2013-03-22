@@ -3,11 +3,11 @@ import logging
 
 #commands: binary -> commandbyte + args
 COMMANDS = {
-    'setColor': struct.pack('B', 100),#struct(100+r+g+b) with r,g,b in range 0-255
-    'fadeToColor': struct.pack('B', 101),#struct(101+r+g+b+time) with r,g,b in 0-255, time in range 0-255 with 1 = 0.1sec
-    'light': struct.pack('B', 102),#struct(102+lightnr+state) with state = [0|1]
-    'configureAutofade': struct.pack('B', 103),#struct(103+time) with 2bytes time in milliseconds
-    'setSmoothfadeTime': struct.pack('B', 104),#struct(104+time) with 2bytes time in milliseconds
+    'setColor': struct.pack('B', 102),#struct(100+r+g+b) with r,g,b in range 0-255
+    #'fadeToColor': struct.pack('B', 101),#struct(101+r+g+b+time) with r,g,b in 0-255, time in range 0-255 with 1 = 0.1sec
+    #'light': struct.pack('B', 102),#struct(102+lightnr+state) with state = [0|1]
+    #'configureAutofade': struct.pack('B', 103),#struct(103+time) with 2bytes time in milliseconds
+    #'setSmoothfadeTime': struct.pack('B', 104),#struct(104+time) with 2bytes time in milliseconds
 }
 
 class Sender():
@@ -17,10 +17,10 @@ class Sender():
         self.connManager = ConnectionManager(host, port)
         self.connManager.start()
 
-    def setColor(self, r,g,b):
+    def setColor(self, r, g, b, led=3):
         """Set permanent LED color to given RGB (0-255)."""
-        logging.info("setting color %03d|%03d|%03d"%(r,g,b))
-        self.connManager.send(COMMANDS['setColor'] + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
+        logging.info("setting color of led %d %03d|%03d|%03d"%(led,r,g,b))
+        self.connManager.send(COMMANDS['setColor'] + struct.pack('B', led) + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
     
     def fadeToColor(self, r, g, b, duration):
         """Fade LEDs to given RGB (0-255) in given duration (1 = 0.1 seconds)"""
@@ -49,29 +49,21 @@ class Sender():
         """Shortcut to set LEDs permanent dark"""
         self.setColor(0, 0, 0)
         
-    def police(self):
+    def police(self, sleep=0.1):
         """Start Kotzmode. Interrupt with Ctrl+C"""
         while True:
             for i in range(0,2):
-                print "red"
-                self.setColor(255,0,0)
-                time.sleep(0.1)
-                print "blue"
-                self.setColor(0,0,255)
-                time.sleep(0.1)
-            print "black"
-            self.setColor(0,0,0)
-            time.sleep(0.08)
+                self.setColor(0,0,255,3)
+                time.sleep(sleep)
+                self.setColor(255,0,0,3)
+                time.sleep(sleep)
             for i in range(0,2):
                 print "red"
                 self.setColor(255,0,0)
-                time.sleep(0.1)
+                time.sleep(sleep)
                 print "blue"
                 self.setColor(0,0,255)
-                time.sleep(0.1)
-            print "white"
-            self.setColor(255,255,255)
-            time.sleep(0.08)
+                time.sleep(sleep)
             
     def police2(self):
         """Start another Kotzmode. Interrupt with Ctrl+C"""
@@ -171,7 +163,7 @@ class ConnectionManager(threading.Thread):
             else:
                 self.recvLock.acquire(False)
                 try:
-                    self.send("keepalive", log=False)
+                    self.send(struct.pack('B', 1), log=False)
                     self.lastReceived = 'untouched'
                     self.lastReceived = self.sock.recv(4096)
                     if not self.stopped:
