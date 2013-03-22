@@ -7,13 +7,14 @@ import logging
 #r, g, b is one byte color (0-255)
 COMMANDS = {
     'setMaster': struct.pack('B', 101),#struct(code+led+master)
-    'setColor': struct.pack('B', 102),#struct(code+led+r+g+b)
+    'setColorRGB': struct.pack('B', 102),#struct(code+led+r+g+b)
     'fadeToColor': struct.pack('B', 103),#struct(code+led+time+r+g+b)
     'randomColor': struct.pack('B', 104),#struct(code+led+time)
     'randomFading': struct.pack('B', 105),#struct(code+led+time)
     'strobe': struct.pack('B', 106),#struct(code+led+timeoff+timetotal)
     'cycle': struct.pack('B', 107),#struct(code+0+time)
     'cycleFade': struct.pack('B', 108),#struct(code+0+time)
+    'setColorHSV': struct.pack('B', 109),#struct(code+led+h(2byte: 0-360)+s+v)
 }
 
 class Sender():
@@ -34,17 +35,22 @@ class Sender():
         for i in range(0,4):
             self.setMaster(i, master)
 
-    def setColor(self, led, r, g, b):
-        """Set permanent color for LED to given RGB (0-255)."""
-        logging.info("setting color of led %d %03d|%03d|%03d"%(led,r,g,b))
-        self.connManager.send(COMMANDS['setColor'] + struct.pack('B', led) + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
-    
+    def setColorRGB(self, led, r, g, b):
+        """Set permanent RGB color for LED to given RGB (0-255)."""
+        logging.info("setting RGB color of led %d %03d|%03d|%03d"%(led,r,g,b))
+        self.connManager.send(COMMANDS['setColorRGB'] + struct.pack('B', led) + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
+
+    def setColorHSV(self, led, h, s, v):
+        """Set permanent HSV color for LED to given HSV (H: 0-359, S+V: 0-255)."""
+        logging.info("setting HSV color of led %d %03d|%03d|%03d"%(led,h,s,v))
+        self.connManager.send(COMMANDS['setColorHSV'] + struct.pack('B', led) + struct.pack('>H', h) + struct.pack('B', s) + struct.pack('B', v))
+
     def setAllColor(self, r, g, b):
         """Set master for LED"""
         logging.info("setting all leds to %03d|%03d|%03d"%(r,g,b))
         for i in range(0,4):
-            self.setColor(i, r, g, b)
-    
+            self.setColorRGB(i, r, g, b)
+
     def fadeToColor(self, led, millis, r, g, b):
         """Fade LED to given RGB (0-255) in given time (0-65535)."""
         logging.info("fade to color %03d|%03d|%03d in %.3f seconds"%(r,g,b,millis/1000.0))
@@ -52,37 +58,37 @@ class Sender():
 
     def white(self):
         """Shortcut to set LEDs permanent white (full brightness)"""
-        self.setColor(254, 254, 254)
+        self.setColorRGB(254, 254, 254)
 
     def black(self):
         """Shortcut to set LEDs permanent dark"""
-        self.setColor(0, 0, 0)
+        self.setColorRGB(0, 0, 0)
         
     def police(self, sleep=0.05):
         """Start Kotzmode. Interrupt with Ctrl+C"""
         while True:
-            self.setColor(0,0,0,0)
-            self.setColor(0,0,0,1)
-            self.setColor(0,0,0,2)
-            self.setColor(0,0,0,3)
+            self.setColorRGB(0,0,0,0)
+            self.setColorRGB(0,0,0,1)
+            self.setColorRGB(0,0,0,2)
+            self.setColorRGB(0,0,0,3)
             for i in range(0,2):
-                self.setColor(0,0,255,0)
-                self.setColor(0,0,255,2)
-                self.setColor(0,0,255,3)
+                self.setColorRGB(0,0,255,0)
+                self.setColorRGB(0,0,255,2)
+                self.setColorRGB(0,0,255,3)
                 time.sleep(sleep)
-                self.setColor(0,0,0,0)
-                self.setColor(0,0,0,2)
-                self.setColor(0,0,0,3)
+                self.setColorRGB(0,0,0,0)
+                self.setColorRGB(0,0,0,2)
+                self.setColorRGB(0,0,0,3)
                 time.sleep(sleep)
             time.sleep(sleep*5)
             for i in range(0,2):
-                self.setColor(255,0,0,0)
-                self.setColor(255,0,0,2)
-                self.setColor(255,0,0,1)
+                self.setColorRGB(255,0,0,0)
+                self.setColorRGB(255,0,0,2)
+                self.setColorRGB(255,0,0,1)
                 time.sleep(sleep)
-                self.setColor(0,0,0,0)
-                self.setColor(0,0,0,2)
-                self.setColor(0,0,0,1)
+                self.setColorRGB(0,0,0,0)
+                self.setColorRGB(0,0,0,2)
+                self.setColorRGB(0,0,0,1)
                 time.sleep(sleep)
             time.sleep(sleep*5)
 
@@ -90,18 +96,18 @@ class Sender():
         """Start another Kotzmode. Interrupt with Ctrl+C"""
         while True:
             for i in range(0,2):
-                self.setColor(255,0,0)
+                self.setColorRGB(255,0,0)
                 time.sleep(0.1)
-                self.setColor(0,0,255)
+                self.setColorRGB(0,0,255)
                 time.sleep(0.1)
-            self.setColor(0,0,0)
+            self.setColorRGB(0,0,0)
             time.sleep(0.05)
             for i in range(0,2):
-                self.setColor(255,0,0)
+                self.setColorRGB(255,0,0)
                 time.sleep(0.1)
-                self.setColor(0,0,255)
+                self.setColorRGB(0,0,255)
                 time.sleep(0.1)
-            self.setColor(255,255,255)
+            self.setColorRGB(255,255,255)
             time.sleep(0.05)
     
     def strobe(self, led, millisoff=80, millistotal=100):
@@ -149,7 +155,7 @@ class Sender():
 #                elif col[i] < 0:
 #                    col[i] = 0
 #                    change[i] = random.randrange(minchange, maxchange)
-#            self.setColor(col[0],col[1],col[2])
+#            self.setColorRGB(col[0],col[1],col[2])
 #            time.sleep(sleep)
 
 #    def light(self, state, lightnr=1):
