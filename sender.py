@@ -27,7 +27,7 @@ class Sender():
         """Set master for LED"""
         logging.info("setting master all leds to %d"%(master))
         for i in range(0,4):
-            self.connManager.send(COMMANDS['setMaster'] + struct.pack('B', i) + struct.pack('B', master))
+            self.setMaster(i, master)
 
     def setColor(self, r, g, b, led):
         """Set permanent LED color to given RGB (0-255)."""
