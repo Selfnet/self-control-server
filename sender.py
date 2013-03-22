@@ -1,14 +1,19 @@
 import socket, time, random, struct, threading, signal
 import logging
 
-#commands: binary -> commandbyte + args
+#commandstructure: command + led + args
+#normally bytes.
+#time is always 2 byte (short) in milliseconds (big endian, 0-65535)
+#r, g, b is one byte color (0-255)
 COMMANDS = {
     'setMaster': struct.pack('B', 101),#struct(code+led+master)
-    'setColor': struct.pack('B', 102),#struct(code+led+r+g+b) with r,g,b in range 0-255
-    #'fadeToColor': struct.pack('B', 101),#struct(101+r+g+b+time) with r,g,b in 0-255, time in range 0-255 with 1 = 0.1sec
-    #'light': struct.pack('B', 102),#struct(102+lightnr+state) with state = [0|1]
-    #'configureAutofade': struct.pack('B', 103),#struct(103+time) with 2bytes time in milliseconds
-    #'setSmoothfadeTime': struct.pack('B', 104),#struct(104+time) with 2bytes time in milliseconds
+    'setColor': struct.pack('B', 102),#struct(code+led+r+g+b)
+    'fadeToColor': struct.pack('B', 103),#struct(code+led+time+r+g+b)
+    'randomColor': struct.pack('B', 104),#struct(code+led+time)
+    'randomFading': struct.pack('B', 105),#struct(code+led+time)
+    'strobe': struct.pack('B', 106),#struct(code+led+timeoff+timetotal)
+    'cycle': struct.pack('B', 107),#struct(code+0+time)
+    'cycleFade': struct.pack('B', 108),#struct(code+0+time)
 }
 
 class Sender():
@@ -29,29 +34,24 @@ class Sender():
         for i in range(0,4):
             self.setMaster(i, master)
 
-    def setColor(self, r, g, b, led):
-        """Set permanent LED color to given RGB (0-255)."""
+    def setColor(self, led, r, g, b):
+        """Set permanent color for LED to given RGB (0-255)."""
         logging.info("setting color of led %d %03d|%03d|%03d"%(led,r,g,b))
         self.connManager.send(COMMANDS['setColor'] + struct.pack('B', led) + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
     
-    def fadeToColor(self, r, g, b, duration):
-        """Fade LEDs to given RGB (0-255) in given duration (1 = 0.1 seconds)"""
-        logging.info("fade to color %03d|%03d|%03d in %.1f seconds"%(r,g,b,duration*0.1))
-        self.connManager.send(COMMANDS['fadeToColor'] + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b) + struct.pack('B', duration))
-        time.sleep((duration+2)*0.1)
-        logging.debug("received: %s"%self.connManager.recv())
-
-    def light(self, state, lightnr=1):
-        """Set lightnr (1 = cold bright light) to given state: 0 (off) or 1 (on)"""
-        state = state + 1
-        self.connManager.send(COMMANDS['light'] + struct.pack('B', lightnr) + struct.pack('B', state))
-
-    def configureAutofade(self, time):
-        self.connManager.send(COMMANDS['configureAutofade'] + struct.pack('>H', time))
-
-    def setSmoothfadeTime(self, millis):
-        """Set the time in milliseconds (1-65535) between 2 fading steps"""
-        self.connManager.send(COMMANDS['setSmoothfadeTime'] + struct.pack('>H', millis))
+    def fadeToColor(self, led, r, g, b, millis, blocking=True):
+        """Fade LED to given RGB (0-255) in given time (0-65535).
+        
+        If blocking=True block until fading finished.
+        """
+        logging.info("fade to color %03d|%03d|%03d in %.3f seconds"%(r,g,b,millis/1000.0))
+        self.connManager.send(COMMANDS['fadeToColor'] + struct.pack('B', led) + struct.pack('>H', millis) + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
+        if blocking:
+            print "waiting for response"
+            logging.info("waiting for response")
+            recv = self.connManager.recv()
+            logging.info("received: %s"%recv)
+            print "received: %s"%recv
 
     def white(self):
         """Shortcut to set LEDs permanent white (full brightness)"""
@@ -77,7 +77,7 @@ class Sender():
                 self.setColor(0,0,0,2)
                 self.setColor(0,0,0,3)
                 time.sleep(sleep)
-            time.sleep(sleep*3)
+            time.sleep(sleep*5)
             for i in range(0,2):
                 self.setColor(255,0,0,0)
                 self.setColor(255,0,0,2)
@@ -87,84 +87,84 @@ class Sender():
                 self.setColor(0,0,0,2)
                 self.setColor(0,0,0,1)
                 time.sleep(sleep)
-            time.sleep(sleep*3)
+            time.sleep(sleep*5)
 
-    def police2(self):
+    def police_old(self):
         """Start another Kotzmode. Interrupt with Ctrl+C"""
         while True:
             for i in range(0,2):
-                self.setColor(255,255,0)
+                self.setColor(255,0,0)
                 time.sleep(0.1)
-                self.setColor(0,255,0)
+                self.setColor(0,0,255)
                 time.sleep(0.1)
             self.setColor(0,0,0)
             time.sleep(0.05)
             for i in range(0,2):
-                self.setColor(255,255,0)
+                self.setColor(255,0,0)
                 time.sleep(0.1)
-                self.setColor(0,255,0)
+                self.setColor(0,0,255)
                 time.sleep(0.1)
             self.setColor(255,255,255)
             time.sleep(0.05)
     
-    def strobe(self,sleep=0.05):
-        """Start strobemode. Interrupt with Ctrl+C
+    def strobe(self, led, millisoff=80, millistotal=100):
+        """Start strobemode
         
         params:
-        sleep: time between 2 flashes in seconds"""
-        self.setAllMaster(0)
-        while True:
-            self.setColor(255,255,255,0)
-            time.sleep(sleep*0.2)
-            self.setColor(0,0,0,0)
-            time.sleep(sleep*0.8)
-    
-    def fadeSoftRandom(self,sleep=0.1,minchange=1,maxchange=7):
-        """Start automatic fading mode. Fade in software, much networktraffic - don't use. Interrupt with Ctrl+C
-        
-        params:
-        sleep: waiting time between 2 fadingsteps in seconds
-        minchange: minimum stepsize
-        maxchange: maximum stepsize"""
-        col = [random.randrange(0,255), random.randrange(0,255), random.randrange(0,255)]
-        change = [random.randrange(minchange, maxchange), random.randrange(minchange, maxchange), random.randrange(minchange, maxchange)]
-        while True:
-            for i in range(0,3):
-                col[i] += change[i]
-                if col[i] > 254:
-                    col[i] = 254
-                    change[i] = random.randrange(minchange, maxchange)*-1
-                elif col[i] < 0:
-                    col[i] = 0
-                    change[i] = random.randrange(minchange, maxchange)
-            self.setColor(col[0],col[1],col[2])
-            time.sleep(sleep)
-            
-    def fadeHardRandom(self,mintime=1,maxtime=255):
-        """Start automatic fading mode. Fade in hardware - use this. Interrupt with Ctrl+C
-        
-        params:
-        minchange: minimum stepsize
-        maxchange: maximum stepsize"""
-        while True:
-            self.fadeToColor(random.randrange(0,255), random.randrange(0,255), random.randrange(0,255), random.randrange(mintime,maxtime))
+        millisoff: light off for this time
+        millistotal: total time of a cycle (millison = millistotal-millisoff)"""
+        self.connManager.send(COMMANDS['strobe'] + struct.pack('B', led) + struct.pack('>H', millisoff) + struct.pack('>H', millistotal))
 
-    def randomColor(self, sleep=1):
-        """Set all sleep seconds a new random color. Interrupt with Ctrl+C
+    def randomFading(self, led, millis=50):
+        """Start automatic fading mode.
         
         params:
-        sleep: sleeptime between 2 colors"""
-        while True:
-            r = random.randrange(0,255)
-            g = random.randrange(0,255)
-            b = random.randrange(0,255)
-            self.setColor(r, g, b)
-            time.sleep(sleep)
-            
+        led: led to fade
+        millis: time between 2 fading steps"""
+        self.connManager.send(COMMANDS['randomFading'] + struct.pack('B', led) + struct.pack('>H', millis))
+
+    def randomColor(self, led, millis=1000):
+        """Set all sleep milliseconds a new random color.
+        
+        params:
+        sleep: sleeptime between 2 colors in milliseconds"""
+        self.connManager.send(COMMANDS['randomColor'] + struct.pack('B', led) + struct.pack('>H', millis))
+
+    def cycle(self, millis=300):
+        """Cycle colors around every millis milliseconds"""
+        self.connManager.send(COMMANDS['cycle'] + struct.pack('B', 0) + struct.pack('>H', millis))
+
+#    def fadeSoftRandom(self,sleep=0.1,minchange=1,maxchange=7):
+#        """Start automatic fading mode. Fade in software, much networktraffic - don't use. Interrupt with Ctrl+C
+#        
+#        params:
+#        sleep: waiting time between 2 fadingsteps in seconds
+#        minchange: minimum stepsize
+#        maxchange: maximum stepsize"""
+#        col = [random.randrange(0,255), random.randrange(0,255), random.randrange(0,255)]
+#        change = [random.randrange(minchange, maxchange), random.randrange(minchange, maxchange), random.randrange(minchange, maxchange)]
+#        while True:
+#            for i in range(0,3):
+#                col[i] += change[i]
+#                if col[i] > 254:
+#                    col[i] = 254
+#                    change[i] = random.randrange(minchange, maxchange)*-1
+#                elif col[i] < 0:
+#                    col[i] = 0
+#                    change[i] = random.randrange(minchange, maxchange)
+#            self.setColor(col[0],col[1],col[2])
+#            time.sleep(sleep)
+
+#    def light(self, state, lightnr=1):
+#        """Set lightnr (1 = cold bright light) to given state: 0 (off) or 1 (on)"""
+#        state = state + 1
+#        self.connManager.send(COMMANDS['light'] + struct.pack('B', lightnr) + struct.pack('B', state))
+
     def stop(self):
         """Stop the Sender. Close all networkconnections and stop."""
         logging.debug('Received stop...')
         self.connManager.stop()
+        self.connManager.join()
 
 class ConnectionManager(threading.Thread):
     def __init__(self,  host, port):
