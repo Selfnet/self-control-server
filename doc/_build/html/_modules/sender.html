@@ -1,0 +1,449 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>sender &mdash; Self-Control 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="top" title="Self-Control 0.1 documentation" href="../index.html" />
+    <link rel="up" title="Module code" href="index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../index.html">Self-Control 0.1 documentation</a> &raquo;</li>
+          <li><a href="index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for sender</h1><div class="highlight"><pre>
+<span class="kn">import</span> <span class="nn">socket</span><span class="o">,</span> <span class="nn">time</span><span class="o">,</span> <span class="nn">random</span><span class="o">,</span> <span class="nn">struct</span><span class="o">,</span> <span class="nn">threading</span><span class="o">,</span> <span class="nn">signal</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+
+<span class="c">#commandstructure: command + led + args</span>
+<span class="c">#normally bytes.</span>
+<span class="c">#time is always 2 byte (short) in milliseconds (big endian, 0-65535)</span>
+<span class="c">#r, g, b is one byte color (0-255)</span>
+<span class="n">COMMANDS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s">&#39;setMaster&#39;</span><span class="p">:</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="mi">101</span><span class="p">),</span><span class="c">#struct(code+led+master)</span>
+    <span class="s">&#39;setColorRGB&#39;</span><span class="p">:</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="mi">102</span><span class="p">),</span><span class="c">#struct(code+led+r+g+b)</span>
+    <span class="s">&#39;fadeToColor&#39;</span><span class="p">:</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="mi">103</span><span class="p">),</span><span class="c">#struct(code+led+time+r+g+b)</span>
+    <span class="s">&#39;randomColor&#39;</span><span class="p">:</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="mi">104</span><span class="p">),</span><span class="c">#struct(code+led+time)</span>
+    <span class="s">&#39;randomFading&#39;</span><span class="p">:</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="mi">105</span><span class="p">),</span><span class="c">#struct(code+led+time)</span>
+    <span class="s">&#39;strobe&#39;</span><span class="p">:</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="mi">106</span><span class="p">),</span><span class="c">#struct(code+led+timeoff+timetotal)</span>
+    <span class="s">&#39;cycle&#39;</span><span class="p">:</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="mi">107</span><span class="p">),</span><span class="c">#struct(code+0+time)</span>
+    <span class="s">&#39;cycleFade&#39;</span><span class="p">:</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="mi">108</span><span class="p">),</span><span class="c">#struct(code+0+time)</span>
+    <span class="s">&#39;setColorHSV&#39;</span><span class="p">:</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="mi">109</span><span class="p">),</span><span class="c">#struct(code+led+h(2byte: 0-360)+s+v)</span>
+<span class="p">}</span>
+
+<div class="viewcode-block" id="Sender"><a class="viewcode-back" href="../sender.html#sender.Sender">[docs]</a><span class="k">class</span> <span class="nc">Sender</span><span class="p">():</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">host</span><span class="o">=</span><span class="s">&#39;10.43.100.111&#39;</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="mi">23</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">host</span> <span class="o">=</span> <span class="n">host</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">port</span> <span class="o">=</span> <span class="n">port</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connManager</span> <span class="o">=</span> <span class="n">ConnectionManager</span><span class="p">(</span><span class="n">host</span><span class="p">,</span> <span class="n">port</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connManager</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+        
+<div class="viewcode-block" id="Sender.setMaster"><a class="viewcode-back" href="../sender.html#sender.Sender.setMaster">[docs]</a>    <span class="k">def</span> <span class="nf">setMaster</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">led</span><span class="p">,</span> <span class="n">master</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Set master for LED&quot;&quot;&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;setting master for led </span><span class="si">%d</span><span class="s"> to </span><span class="si">%d</span><span class="s">&quot;</span><span class="o">%</span><span class="p">(</span><span class="n">led</span><span class="p">,</span><span class="n">master</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connManager</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">COMMANDS</span><span class="p">[</span><span class="s">&#39;setMaster&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="n">led</span><span class="p">)</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="n">master</span><span class="p">))</span>
+        </div>
+<div class="viewcode-block" id="Sender.setAllMaster"><a class="viewcode-back" href="../sender.html#sender.Sender.setAllMaster">[docs]</a>    <span class="k">def</span> <span class="nf">setAllMaster</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">master</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Set master for LED&quot;&quot;&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;setting master all leds to </span><span class="si">%d</span><span class="s">&quot;</span><span class="o">%</span><span class="p">(</span><span class="n">master</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">4</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">setMaster</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">master</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Sender.setColorRGB"><a class="viewcode-back" href="../sender.html#sender.Sender.setColorRGB">[docs]</a>    <span class="k">def</span> <span class="nf">setColorRGB</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">led</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="n">g</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Set permanent RGB color for LED to given RGB (0-255).&quot;&quot;&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;setting RGB color of led </span><span class="si">%d</span><span class="s"> </span><span class="si">%03d</span><span class="s">|</span><span class="si">%03d</span><span class="s">|</span><span class="si">%03d</span><span class="s">&quot;</span><span class="o">%</span><span class="p">(</span><span class="n">led</span><span class="p">,</span><span class="n">r</span><span class="p">,</span><span class="n">g</span><span class="p">,</span><span class="n">b</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connManager</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">COMMANDS</span><span class="p">[</span><span class="s">&#39;setColorRGB&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="n">led</span><span class="p">)</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="n">r</span><span class="p">)</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="n">g</span><span class="p">)</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="n">b</span><span class="p">))</span>
+</div>
+<div class="viewcode-block" id="Sender.setColorHSV"><a class="viewcode-back" href="../sender.html#sender.Sender.setColorHSV">[docs]</a>    <span class="k">def</span> <span class="nf">setColorHSV</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">led</span><span class="p">,</span> <span class="n">h</span><span class="p">,</span> <span class="n">s</span><span class="p">,</span> <span class="n">v</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Set permanent HSV color for LED to given HSV (H: 0-359, S+V: 0-255).&quot;&quot;&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;setting HSV color of led </span><span class="si">%d</span><span class="s"> </span><span class="si">%03d</span><span class="s">|</span><span class="si">%03d</span><span class="s">|</span><span class="si">%03d</span><span class="s">&quot;</span><span class="o">%</span><span class="p">(</span><span class="n">led</span><span class="p">,</span><span class="n">h</span><span class="p">,</span><span class="n">s</span><span class="p">,</span><span class="n">v</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connManager</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">COMMANDS</span><span class="p">[</span><span class="s">&#39;setColorHSV&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="n">led</span><span class="p">)</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;&gt;H&#39;</span><span class="p">,</span> <span class="n">h</span><span class="p">)</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="n">s</span><span class="p">)</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="n">v</span><span class="p">))</span>
+</div>
+<div class="viewcode-block" id="Sender.setAllColor"><a class="viewcode-back" href="../sender.html#sender.Sender.setAllColor">[docs]</a>    <span class="k">def</span> <span class="nf">setAllColor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="n">g</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Set master for LED&quot;&quot;&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;setting all leds to </span><span class="si">%03d</span><span class="s">|</span><span class="si">%03d</span><span class="s">|</span><span class="si">%03d</span><span class="s">&quot;</span><span class="o">%</span><span class="p">(</span><span class="n">r</span><span class="p">,</span><span class="n">g</span><span class="p">,</span><span class="n">b</span><span class="p">))</span>
+        <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">4</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="n">g</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Sender.fadeToColor"><a class="viewcode-back" href="../sender.html#sender.Sender.fadeToColor">[docs]</a>    <span class="k">def</span> <span class="nf">fadeToColor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">led</span><span class="p">,</span> <span class="n">millis</span><span class="p">,</span> <span class="n">r</span><span class="p">,</span> <span class="n">g</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Fade LED to given RGB (0-255) in given time (0-65535).&quot;&quot;&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;fade to color </span><span class="si">%03d</span><span class="s">|</span><span class="si">%03d</span><span class="s">|</span><span class="si">%03d</span><span class="s"> in </span><span class="si">%.3f</span><span class="s"> seconds&quot;</span><span class="o">%</span><span class="p">(</span><span class="n">r</span><span class="p">,</span><span class="n">g</span><span class="p">,</span><span class="n">b</span><span class="p">,</span><span class="n">millis</span><span class="o">/</span><span class="mf">1000.0</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connManager</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">COMMANDS</span><span class="p">[</span><span class="s">&#39;fadeToColor&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="n">led</span><span class="p">)</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;&gt;H&#39;</span><span class="p">,</span> <span class="n">millis</span><span class="p">)</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="n">r</span><span class="p">)</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="n">g</span><span class="p">)</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="n">b</span><span class="p">))</span>
+</div>
+<div class="viewcode-block" id="Sender.white"><a class="viewcode-back" href="../sender.html#sender.Sender.white">[docs]</a>    <span class="k">def</span> <span class="nf">white</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Shortcut to set LEDs permanent white (full brightness)&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">254</span><span class="p">,</span> <span class="mi">254</span><span class="p">,</span> <span class="mi">254</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Sender.black"><a class="viewcode-back" href="../sender.html#sender.Sender.black">[docs]</a>    <span class="k">def</span> <span class="nf">black</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Shortcut to set LEDs permanent dark&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        </div>
+<div class="viewcode-block" id="Sender.police"><a class="viewcode-back" href="../sender.html#sender.Sender.police">[docs]</a>    <span class="k">def</span> <span class="nf">police</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sleep</span><span class="o">=</span><span class="mf">0.05</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Start Kotzmode. Interrupt with Ctrl+C&quot;&quot;&quot;</span>
+        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">2</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">3</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">2</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">255</span><span class="p">,</span><span class="mi">0</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">255</span><span class="p">,</span><span class="mi">2</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">255</span><span class="p">,</span><span class="mi">3</span><span class="p">)</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">sleep</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">2</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">3</span><span class="p">)</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">sleep</span><span class="p">)</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">sleep</span><span class="o">*</span><span class="mi">5</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">2</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">2</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">sleep</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">2</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">sleep</span><span class="p">)</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">sleep</span><span class="o">*</span><span class="mi">5</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="Sender.police_old"><a class="viewcode-back" href="../sender.html#sender.Sender.police_old">[docs]</a>    <span class="k">def</span> <span class="nf">police_old</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Start another Kotzmode. Interrupt with Ctrl+C&quot;&quot;&quot;</span>
+        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">2</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">)</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">255</span><span class="p">)</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.05</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">2</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">)</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">255</span><span class="p">)</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">setColorRGB</span><span class="p">(</span><span class="mi">255</span><span class="p">,</span><span class="mi">255</span><span class="p">,</span><span class="mi">255</span><span class="p">)</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.05</span><span class="p">)</span>
+    </div>
+<div class="viewcode-block" id="Sender.strobe"><a class="viewcode-back" href="../sender.html#sender.Sender.strobe">[docs]</a>    <span class="k">def</span> <span class="nf">strobe</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">led</span><span class="p">,</span> <span class="n">millisoff</span><span class="o">=</span><span class="mi">80</span><span class="p">,</span> <span class="n">millistotal</span><span class="o">=</span><span class="mi">100</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Start strobemode</span>
+<span class="sd">        </span>
+<span class="sd">        params:</span>
+<span class="sd">        millisoff: light off for this time</span>
+<span class="sd">        millistotal: total time of a cycle (millison = millistotal-millisoff)&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connManager</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">COMMANDS</span><span class="p">[</span><span class="s">&#39;strobe&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="n">led</span><span class="p">)</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;&gt;H&#39;</span><span class="p">,</span> <span class="n">millisoff</span><span class="p">)</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;&gt;H&#39;</span><span class="p">,</span> <span class="n">millistotal</span><span class="p">))</span>
+</div>
+<div class="viewcode-block" id="Sender.randomFading"><a class="viewcode-back" href="../sender.html#sender.Sender.randomFading">[docs]</a>    <span class="k">def</span> <span class="nf">randomFading</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">led</span><span class="p">,</span> <span class="n">millis</span><span class="o">=</span><span class="mi">50</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Start automatic fading mode.</span>
+<span class="sd">        </span>
+<span class="sd">        params:</span>
+<span class="sd">        led: led to fade</span>
+<span class="sd">        millis: time between 2 fading steps&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connManager</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">COMMANDS</span><span class="p">[</span><span class="s">&#39;randomFading&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="n">led</span><span class="p">)</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;&gt;H&#39;</span><span class="p">,</span> <span class="n">millis</span><span class="p">))</span>
+</div>
+<div class="viewcode-block" id="Sender.randomColor"><a class="viewcode-back" href="../sender.html#sender.Sender.randomColor">[docs]</a>    <span class="k">def</span> <span class="nf">randomColor</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">led</span><span class="p">,</span> <span class="n">millis</span><span class="o">=</span><span class="mi">1000</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Set all sleep milliseconds a new random color.</span>
+<span class="sd">        </span>
+<span class="sd">        params:</span>
+<span class="sd">        sleep: sleeptime between 2 colors in milliseconds&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connManager</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">COMMANDS</span><span class="p">[</span><span class="s">&#39;randomColor&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="n">led</span><span class="p">)</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;&gt;H&#39;</span><span class="p">,</span> <span class="n">millis</span><span class="p">))</span>
+</div>
+<div class="viewcode-block" id="Sender.cycle"><a class="viewcode-back" href="../sender.html#sender.Sender.cycle">[docs]</a>    <span class="k">def</span> <span class="nf">cycle</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">millis</span><span class="o">=</span><span class="mi">300</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Cycle colors around every millis milliseconds&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connManager</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">COMMANDS</span><span class="p">[</span><span class="s">&#39;cycle&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;&gt;H&#39;</span><span class="p">,</span> <span class="n">millis</span><span class="p">))</span>
+
+<span class="c">#    def fadeSoftRandom(self,sleep=0.1,minchange=1,maxchange=7):</span>
+<span class="c">#        &quot;&quot;&quot;Start automatic fading mode. Fade in software, much networktraffic - don&#39;t use. Interrupt with Ctrl+C</span>
+<span class="c">#        </span>
+<span class="c">#        params:</span>
+<span class="c">#        sleep: waiting time between 2 fadingsteps in seconds</span>
+<span class="c">#        minchange: minimum stepsize</span>
+<span class="c">#        maxchange: maximum stepsize&quot;&quot;&quot;</span>
+<span class="c">#        col = [random.randrange(0,255), random.randrange(0,255), random.randrange(0,255)]</span>
+<span class="c">#        change = [random.randrange(minchange, maxchange), random.randrange(minchange, maxchange), random.randrange(minchange, maxchange)]</span>
+<span class="c">#        while True:</span>
+<span class="c">#            for i in range(0,3):</span>
+<span class="c">#                col[i] += change[i]</span>
+<span class="c">#                if col[i] &gt; 254:</span>
+<span class="c">#                    col[i] = 254</span>
+<span class="c">#                    change[i] = random.randrange(minchange, maxchange)*-1</span>
+<span class="c">#                elif col[i] &lt; 0:</span>
+<span class="c">#                    col[i] = 0</span>
+<span class="c">#                    change[i] = random.randrange(minchange, maxchange)</span>
+<span class="c">#            self.setColorRGB(col[0],col[1],col[2])</span>
+<span class="c">#            time.sleep(sleep)</span>
+
+<span class="c">#    def light(self, state, lightnr=1):</span>
+<span class="c">#        &quot;&quot;&quot;Set lightnr (1 = cold bright light) to given state: 0 (off) or 1 (on)&quot;&quot;&quot;</span>
+<span class="c">#        state = state + 1</span>
+<span class="c">#        self.connManager.send(COMMANDS[&#39;light&#39;] + struct.pack(&#39;B&#39;, lightnr) + struct.pack(&#39;B&#39;, state))</span>
+</div>
+<div class="viewcode-block" id="Sender.stop"><a class="viewcode-back" href="../sender.html#sender.Sender.stop">[docs]</a>    <span class="k">def</span> <span class="nf">stop</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Stop the Sender. Close all networkconnections and stop.&quot;&quot;&quot;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;Received stop...&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connManager</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connManager</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+</div></div>
+<div class="viewcode-block" id="ConnectionManager"><a class="viewcode-back" href="../sender.html#sender.ConnectionManager">[docs]</a><span class="k">class</span> <span class="nc">ConnectionManager</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span>  <span class="n">host</span><span class="p">,</span> <span class="n">port</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">(</span><span class="n">ConnectionManager</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">host</span> <span class="o">=</span> <span class="n">host</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">port</span> <span class="o">=</span> <span class="n">port</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connected</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sendLock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">recvLock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">recvLock</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stopped</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lastReceived</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sock</span> <span class="o">=</span> <span class="n">socket</span><span class="o">.</span><span class="n">socket</span><span class="p">(</span><span class="n">socket</span><span class="o">.</span><span class="n">AF_INET</span><span class="p">,</span> <span class="n">socket</span><span class="o">.</span><span class="n">SOCK_STREAM</span><span class="p">)</span>
+    
+<div class="viewcode-block" id="ConnectionManager.run"><a class="viewcode-back" href="../sender.html#sender.ConnectionManager.run">[docs]</a>    <span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">print</span> <span class="s">&#39;ConnectionManager started. Trying to connect...&#39;</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;ConnectionManager started. Trying to connect...&#39;</span><span class="p">)</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">stopped</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">connected</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">tryconnect</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">recvLock</span><span class="o">.</span><span class="n">acquire</span><span class="p">(</span><span class="bp">False</span><span class="p">)</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">struct</span><span class="o">.</span><span class="n">pack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">log</span><span class="o">=</span><span class="bp">False</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">lastReceived</span> <span class="o">=</span> <span class="s">&#39;untouched&#39;</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">lastReceived</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sock</span><span class="o">.</span><span class="n">recv</span><span class="p">(</span><span class="mi">4096</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">stopped</span><span class="p">:</span>
+                        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">lastReceived</span><span class="p">:</span>
+                            <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;received: </span><span class="si">%s</span><span class="s">&quot;</span><span class="o">%</span><span class="bp">self</span><span class="o">.</span><span class="n">lastReceived</span><span class="p">)</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">recvLock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">recvLock</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span>
+                        <span class="k">else</span><span class="p">:</span>
+                            <span class="bp">self</span><span class="o">.</span><span class="n">connectionReset</span><span class="p">()</span>
+                <span class="k">except</span> <span class="n">socket</span><span class="o">.</span><span class="n">timeout</span><span class="p">,</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="k">pass</span>
+                <span class="k">except</span> <span class="ne">Exception</span><span class="p">,</span> <span class="n">e</span><span class="p">:</span>
+                    <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&#39;in statechecker exception: </span><span class="si">%s</span><span class="s">&#39;</span><span class="o">%</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">connectionReset</span><span class="p">()</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;Closing connection...&#39;</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">Exception</span><span class="p">,</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&#39;Connection closed, ConnectionManager stopped&#39;</span><span class="p">)</span>
+    </div>
+<div class="viewcode-block" id="ConnectionManager.connectionReset"><a class="viewcode-back" href="../sender.html#sender.ConnectionManager.connectionReset">[docs]</a>    <span class="k">def</span> <span class="nf">connectionReset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;connection reset&quot;</span><span class="p">)</span>
+        <span class="k">print</span> <span class="s">&quot;Connection lost. Reconnecting...&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sendLock</span><span class="o">.</span><span class="n">acquire</span><span class="p">(</span><span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sendLock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sendLock</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connected</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lastReceived</span> <span class="o">=</span> <span class="s">&#39;Connection error&#39;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">recvLock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">recvLock</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span>
+</div>
+<div class="viewcode-block" id="ConnectionManager.recv"><a class="viewcode-back" href="../sender.html#sender.ConnectionManager.recv">[docs]</a>    <span class="k">def</span> <span class="nf">recv</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">recvLock</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">recvLock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">lastReceived</span>
+    </div>
+<div class="viewcode-block" id="ConnectionManager.connect"><a class="viewcode-back" href="../sender.html#sender.ConnectionManager.connect">[docs]</a>    <span class="k">def</span> <span class="nf">connect</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sendLock</span><span class="o">.</span><span class="n">acquire</span><span class="p">(</span><span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sock</span> <span class="o">=</span> <span class="n">socket</span><span class="o">.</span><span class="n">socket</span><span class="p">(</span><span class="n">socket</span><span class="o">.</span><span class="n">AF_INET</span><span class="p">,</span> <span class="n">socket</span><span class="o">.</span><span class="n">SOCK_STREAM</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sock</span><span class="o">.</span><span class="n">settimeout</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sock</span><span class="o">.</span><span class="n">connect</span><span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">host</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">port</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connected</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;connection established&quot;</span><span class="p">)</span>
+        <span class="k">print</span> <span class="s">&quot;Connected to </span><span class="si">%s</span><span class="s">:</span><span class="si">%d</span><span class="s">&quot;</span><span class="o">%</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">host</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">port</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sendLock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+    </div>
+<div class="viewcode-block" id="ConnectionManager.stop"><a class="viewcode-back" href="../sender.html#sender.ConnectionManager.stop">[docs]</a>    <span class="k">def</span> <span class="nf">stop</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stopped</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">disconnect</span><span class="p">()</span>
+    </div>
+<div class="viewcode-block" id="ConnectionManager.disconnect"><a class="viewcode-back" href="../sender.html#sender.ConnectionManager.disconnect">[docs]</a>    <span class="k">def</span> <span class="nf">disconnect</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sendLock</span><span class="o">.</span><span class="n">acquire</span><span class="p">(</span><span class="bp">False</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sock</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;disconnect&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">connected</span> <span class="o">=</span> <span class="bp">False</span>
+    </div>
+<div class="viewcode-block" id="ConnectionManager.tryconnect"><a class="viewcode-back" href="../sender.html#sender.ConnectionManager.tryconnect">[docs]</a>    <span class="k">def</span> <span class="nf">tryconnect</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sendLock</span><span class="o">.</span><span class="n">acquire</span><span class="p">(</span><span class="bp">False</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">disconnect</span><span class="p">()</span>
+        <span class="k">except</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Trying to connect...&quot;</span><span class="p">)</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">connected</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">stopped</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;Connected to </span><span class="si">%s</span><span class="s">:</span><span class="si">%d</span><span class="s">&quot;</span><span class="o">%</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">host</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">port</span><span class="p">))</span>
+            <span class="k">except</span> <span class="n">socket</span><span class="o">.</span><span class="n">timeout</span><span class="p">:</span>
+                <span class="k">pass</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">,</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="n">e</span><span class="p">)</span>
+                <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;Trying to connect...&quot;</span><span class="p">)</span>
+</div>
+<div class="viewcode-block" id="ConnectionManager.send"><a class="viewcode-back" href="../sender.html#sender.ConnectionManager.send">[docs]</a>    <span class="k">def</span> <span class="nf">send</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">msg</span><span class="p">,</span> <span class="n">log</span><span class="o">=</span><span class="bp">True</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">connected</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">log</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;waiting for sendLock...&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sendLock</span><span class="o">.</span><span class="n">acquire</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">log</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s">&quot;sendLock acquired&quot;</span><span class="p">)</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;sending unicode </span><span class="si">%s</span><span class="s">&quot;</span><span class="o">%</span><span class="n">msg</span><span class="p">)</span>
+            <span class="n">binmsg</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+            <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">msg</span><span class="p">:</span>
+                <span class="n">binmsg</span> <span class="o">+=</span> <span class="n">Helper</span><span class="o">.</span><span class="n">format8bit</span><span class="p">(</span><span class="nb">bin</span><span class="p">(</span><span class="n">struct</span><span class="o">.</span><span class="n">unpack</span><span class="p">(</span><span class="s">&#39;B&#39;</span><span class="p">,</span><span class="n">c</span><span class="p">)[</span><span class="mi">0</span><span class="p">]))</span> <span class="o">+</span> <span class="s">&#39; &#39;</span>
+            <span class="k">if</span> <span class="n">log</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s">&quot;sending binary </span><span class="si">%s</span><span class="s">&quot;</span><span class="o">%</span><span class="n">binmsg</span><span class="p">)</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">sock</span><span class="o">.</span><span class="n">sendall</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">,</span> <span class="n">e</span><span class="p">:</span>
+                <span class="n">logging</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s">&#39;Exception when sending: </span><span class="si">%s</span><span class="s">&#39;</span><span class="o">%</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+                <span class="k">print</span> <span class="s">&quot;Connection error. Reconnecting...&quot;</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">sendLock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">connectionReset</span><span class="p">()</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">sendLock</span><span class="o">.</span><span class="n">release</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logging</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s">&quot;Not sent. Socket not connected&quot;</span><span class="p">)</span>
+        
+</div></div>
+<div class="viewcode-block" id="Helper"><a class="viewcode-back" href="../sender.html#sender.Helper">[docs]</a><span class="k">class</span> <span class="nc">Helper</span><span class="p">:</span>
+    <span class="nd">@staticmethod</span>
+<div class="viewcode-block" id="Helper.format8bit"><a class="viewcode-back" href="../sender.html#sender.Helper.format8bit">[docs]</a>    <span class="k">def</span> <span class="nf">format8bit</span><span class="p">(</span><span class="n">binstr</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">(</span><span class="s">&#39;0&#39;</span><span class="o">*</span><span class="p">(</span><span class="mi">8</span><span class="o">-</span><span class="nb">len</span><span class="p">(</span><span class="n">binstr</span><span class="p">[</span><span class="mi">2</span><span class="p">:])))</span> <span class="o">+</span> <span class="n">binstr</span><span class="p">[</span><span class="mi">2</span><span class="p">:]</span>
+</div></div>
+<div class="viewcode-block" id="main"><a class="viewcode-back" href="../sender.html#sender.main">[docs]</a><span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+    <span class="c"># set up logging to file - see previous section for more details</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">basicConfig</span><span class="p">(</span><span class="n">level</span><span class="o">=</span><span class="n">logging</span><span class="o">.</span><span class="n">DEBUG</span><span class="p">,</span>
+                        <span class="n">format</span><span class="o">=</span><span class="s">&#39;</span><span class="si">%(asctime)s</span><span class="s"> </span><span class="si">%(name)-12s</span><span class="s"> </span><span class="si">%(levelname)-8s</span><span class="s"> </span><span class="si">%(message)s</span><span class="s">&#39;</span><span class="p">,</span>
+                        <span class="n">datefmt</span><span class="o">=</span><span class="s">&#39;</span><span class="si">%d</span><span class="s">.%m.%y %H:%M:</span><span class="si">%s</span><span class="s">&#39;</span><span class="p">,</span>
+                        <span class="n">filename</span><span class="o">=</span><span class="s">&#39;sender.log&#39;</span><span class="p">,</span>
+                        <span class="n">filemode</span><span class="o">=</span><span class="s">&#39;a&#39;</span><span class="p">)</span>
+    <span class="c">#logging.critical(&quot;Critical&quot;)</span>
+    <span class="c">#logging.error(&quot;Error&quot;)</span>
+    <span class="c">#logging.warning(&quot;Warning&quot;)</span>
+    <span class="c">#logging.info(&quot;Info&quot;)</span>
+    <span class="c">#logging.debug(&quot;Debug&quot;)</span>
+    
+    <span class="k">global</span> <span class="n">s</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="n">Sender</span><span class="p">()</span>
+
+    <span class="c">#######################</span>
+    <span class="c">#fancy startup shit (history, tabcompletion &amp; Co)</span>
+    <span class="c">#######################</span>
+    <span class="kn">import</span> <span class="nn">atexit</span>
+    <span class="kn">import</span> <span class="nn">os</span>
+    <span class="kn">import</span> <span class="nn">readline</span>
+    <span class="kn">import</span> <span class="nn">rlcompleter</span>
+    <span class="n">historyPath</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="s">&quot;~/.pyhistory&quot;</span><span class="p">)</span>
+    <span class="n">historyTmp</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">expanduser</span><span class="p">(</span><span class="s">&quot;~/.pyhisttmp.py&quot;</span><span class="p">)</span>
+    <span class="n">endMarkerStr</span><span class="o">=</span> <span class="s">&quot;# # # histDUMP # # #&quot;</span>
+    <span class="n">saveMacro</span><span class="o">=</span> <span class="s">&quot;import readline; readline.write_history_file(&#39;&quot;</span><span class="o">+</span><span class="n">historyTmp</span><span class="o">+</span><span class="s">&quot;&#39;); </span><span class="se">\</span>
+<span class="s">        print &#39;####&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&#39;; print &#39;&#39;.join(filter(lambda lineP: </span><span class="se">\</span>
+<span class="s">        not lineP.strip().endswith(&#39;&quot;</span><span class="o">+</span><span class="n">endMarkerStr</span><span class="o">+</span><span class="s">&quot;&#39;),  </span><span class="se">\</span>
+<span class="s">        open(&#39;&quot;</span><span class="o">+</span><span class="n">historyTmp</span><span class="o">+</span><span class="s">&quot;&#39;).readlines())[:])+&#39;####&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&#39;&quot;</span><span class="o">+</span><span class="n">endMarkerStr</span>
+    <span class="n">readline</span><span class="o">.</span><span class="n">parse_and_bind</span><span class="p">(</span><span class="s">&#39;tab: complete&#39;</span><span class="p">)</span>
+    <span class="n">readline</span><span class="o">.</span><span class="n">parse_and_bind</span><span class="p">(</span><span class="s">&#39;\C-w: &quot;&#39;</span><span class="o">+</span><span class="n">saveMacro</span><span class="o">+</span><span class="s">&#39;&quot;&#39;</span><span class="p">)</span>
+    <span class="k">def</span> <span class="nf">save_history</span><span class="p">(</span><span class="n">historyPath</span><span class="o">=</span><span class="n">historyPath</span><span class="p">,</span> <span class="n">endMarkerStr</span><span class="o">=</span><span class="n">endMarkerStr</span><span class="p">):</span>
+        <span class="kn">import</span> <span class="nn">readline</span>
+        <span class="n">readline</span><span class="o">.</span><span class="n">write_history_file</span><span class="p">(</span><span class="n">historyPath</span><span class="p">)</span>
+        <span class="c"># Now filter out those line containing the saveMacro</span>
+        <span class="n">lines</span><span class="o">=</span> <span class="nb">filter</span><span class="p">(</span><span class="k">lambda</span> <span class="n">lineP</span><span class="p">,</span> <span class="n">endMarkerStr</span><span class="o">=</span><span class="n">endMarkerStr</span><span class="p">:</span>
+                          <span class="ow">not</span> <span class="n">lineP</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="n">endMarkerStr</span><span class="p">),</span> <span class="nb">open</span><span class="p">(</span><span class="n">historyPath</span><span class="p">)</span><span class="o">.</span><span class="n">readlines</span><span class="p">())</span>
+        <span class="nb">open</span><span class="p">(</span><span class="n">historyPath</span><span class="p">,</span> <span class="s">&#39;w+&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s">&#39;&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">))</span>
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">historyPath</span><span class="p">):</span>
+        <span class="n">readline</span><span class="o">.</span><span class="n">read_history_file</span><span class="p">(</span><span class="n">historyPath</span><span class="p">)</span>
+    <span class="n">atexit</span><span class="o">.</span><span class="n">register</span><span class="p">(</span><span class="n">save_history</span><span class="p">)</span>
+
+    <span class="k">del</span> <span class="n">os</span><span class="p">,</span> <span class="n">atexit</span><span class="p">,</span> <span class="n">readline</span><span class="p">,</span> <span class="n">rlcompleter</span><span class="p">,</span> <span class="n">save_history</span><span class="p">,</span> <span class="n">historyPath</span>
+    <span class="k">del</span> <span class="n">historyTmp</span><span class="p">,</span> <span class="n">endMarkerStr</span><span class="p">,</span> <span class="n">saveMacro</span>
+    <span class="c">#######################</span>
+    <span class="c">#end fancy startup shit</span>
+    <span class="c">#######################</span>
+
+    <span class="kn">import</span> <span class="nn">code</span>
+    <span class="n">code</span><span class="o">.</span><span class="n">InteractiveConsole</span><span class="p">(</span><span class="nb">locals</span><span class="o">=</span><span class="nb">globals</span><span class="p">())</span><span class="o">.</span><span class="n">interact</span><span class="p">(</span><span class="s">&quot;s is your Sender! try &#39;s.police()&#39;&quot;</span><span class="p">)</span>
+    <span class="k">print</span> <span class="s">&quot;Stopping network daemon...&quot;</span>
+    <span class="n">s</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+    <span class="k">print</span> <span class="s">&quot;Stopped. Exiting...&quot;</span></div>
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../index.html">Self-Control 0.1 documentation</a> &raquo;</li>
+          <li><a href="index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2013, Selfnet e.V..
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 1.1.3.
+    </div>
+  </body>
+</html>
