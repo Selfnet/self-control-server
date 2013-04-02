@@ -1,3 +1,4 @@
 *.pyc
 *~
 *.log
+doc/_build
