@@ -1,6 +1,9 @@
 import socket, time, random, struct, threading, signal
 import logging
 
+import protocol
+import construct
+
 #commandstructure: command + led + args
 #normally bytes.
 #time is always 2 byte (short) in milliseconds (big endian, 0-65535)
@@ -18,11 +21,30 @@ COMMANDS = {
 }
 
 class Sender():
-    def __init__(self, host='10.43.100.111', port=23):
+    def __init__(self, host='10.43.100.112', port=23):
         self.host = host
         self.port = port
         self.connManager = ConnectionManager(host, port)
         self.connManager.start()
+        time.sleep(0.5)
+
+    def sendMessage(self,container):
+        ret = 0
+        payload = ''
+        
+        try:
+            payload = protocol.gw_msg.build(container)
+        except Exception,e:
+            logging.warn('Exception when building container: %s'%str(e))
+            ret = 1
+
+        hexdump = Helper.hexdump(payload)
+        bindump = Helper.bindump(payload)
+        
+        logging.debug('Attempting to send container\n%s\n' % str(container)\
+                        +'Hex content: %s\n' % hexdump\
+                        + 'Binary content: %s' % bindump)
+        self.connManager.send(payload)
         
     def setMaster(self, led, master):
         """Set master for LED"""
@@ -297,6 +319,26 @@ class Helper:
     @staticmethod
     def format8bit(binstr):
         return ('0'*(8-len(binstr[2:]))) + binstr[2:]
+
+    @staticmethod
+    def hexdump(string):
+        hexdump = ''
+        for char in string:
+            hexdump += "\\x%02x" % int(ord(char))
+        return hexdump
+
+    @staticmethod
+    def bindump(string):
+        bindump = ''
+        for i,char in enumerate(string):
+            bindump += "%d|%s|" % (i,Helper.binx(ord(char),8))
+        return bindump
+
+    @staticmethod
+    def binx(x, digits=0):
+        oct2bin = ['000','001','010','011','100','101','110','111'] 
+        binstring = [oct2bin[int(n)] for n in oct(x)] 
+        return ''.join(binstring).lstrip('0').zfill(digits)
 
 def main():
     # set up logging to file - see previous section for more details
