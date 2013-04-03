@@ -181,6 +181,7 @@ class ConnectionManager(threading.Thread):
         self.stopped = False
         self.lastReceived = ''
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.daemon = True
     
     def run(self):
         print 'ConnectionManager started. Trying to connect...'
