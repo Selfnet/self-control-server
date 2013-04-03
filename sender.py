@@ -21,45 +21,35 @@ COMMANDS = {
 }
 
 class Sender():
-    def __init__(self, host='10.43.100.111', port=23):
+    def __init__(self, host='10.43.100.112', port=23):
         self.host = host
         self.port = port
-        self.ledMsgStub = construct.Container(
-                                            frametype = 'CAN_MSG',
-                                            service = 'REGULAR',
-                                            subnet = 'NOC',
-                                            protocol = 'LED',
-                                            receiver = 'ADDR_LED',
-                                            sender = 'ADDR_GW',
-                                            )
         self.connManager = ConnectionManager(host, port)
-        #self.connManager.start()
-    
-    def setMaster(self, leds = [0,0,0,0], master = 0):
-        """Set master for leds"""
-        logging.info("setting master for leds %s to %d"%(''.join(str(i) for i in leds),master))
-        ledMsg = construct.Container(
-                                            length = 3,
-                                            mode = 'MASTER',
-                                            leds = leds,
-                                            colormode = 'RGB',
-                                            led = master,
-                                            )
-        ledMsg.update(self.ledMsgStub.copy())
-        print ledMsg
-        payload = protocol.gw_msg.build(ledMsg)
-        
-        hexdump = ''
-        for char in payload:
-            hexdump += "\\x%02x" % int(ord(char))
-        print hexdump
+        self.connManager.start()
+        time.sleep(0.5)
 
-        bindump = ''
-        for i,char in enumerate(payload):
-            bindump += "%d|%s|" % (i,self.binx(ord(char),8))
-        print bindump
+    def sendMessage(self,container):
+        ret = 0
+        payload = ''
         
-        #self.connManager.send(COMMANDS['setMaster'] + struct.pack('B', led) + struct.pack('B', master))
+        try:
+            payload = protocol.gw_msg.build(container)
+        except Exception,e:
+            logging.warn('Exception when building container: %s'%str(e))
+            ret = 1
+
+        hexdump = Helper.hexdump(payload)
+        bindump = Helper.bindump(payload)
+        
+        logging.debug('Attempting to send container\n%s\n' % str(container)\
+                        +'Hex content: %s\n' % hexdump\
+                        + 'Binary content: %s' % bindump)
+        self.connManager.send(payload)
+        
+    def setMaster(self, led, master):
+        """Set master for LED"""
+        logging.info("setting master for led %d to %d"%(led,master))
+        self.connManager.send(COMMANDS['setMaster'] + struct.pack('B', led) + struct.pack('B', master))
         
     def setAllMaster(self, master):
         """Set master for LED"""
@@ -194,11 +184,7 @@ class Sender():
 #        """Set lightnr (1 = cold bright light) to given state: 0 (off) or 1 (on)"""
 #        state = state + 1
 #        self.connManager.send(COMMANDS['light'] + struct.pack('B', lightnr) + struct.pack('B', state))
-    def binx(self, x, digits=0): 
-        oct2bin = ['000','001','010','011','100','101','110','111'] 
-        binstring = [oct2bin[int(n)] for n in oct(x)] 
-        return ''.join(binstring).lstrip('0').zfill(digits) 
-    
+
     def stop(self):
         """Stop the Sender. Close all networkconnections and stop."""
         logging.debug('Received stop...')
@@ -332,6 +318,26 @@ class Helper:
     @staticmethod
     def format8bit(binstr):
         return ('0'*(8-len(binstr[2:]))) + binstr[2:]
+
+    @staticmethod
+    def hexdump(string):
+        hexdump = ''
+        for char in string:
+            hexdump += "\\x%02x" % int(ord(char))
+        return hexdump
+
+    @staticmethod
+    def bindump(string):
+        bindump = ''
+        for i,char in enumerate(string):
+            bindump += "%d|%s|" % (i,Helper.binx(ord(char),8))
+        return bindump
+
+    @staticmethod
+    def binx(x, digits=0):
+        oct2bin = ['000','001','010','011','100','101','110','111'] 
+        binstring = [oct2bin[int(n)] for n in oct(x)] 
+        return ''.join(binstring).lstrip('0').zfill(digits)
 
 def main():
     # set up logging to file - see previous section for more details

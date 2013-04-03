@@ -1,7 +1,8 @@
 import protocol
 import construct
 import sender
-import logging
+import logging, time
+import random
 
 def binx(x, digits=0): 
     oct2bin = ['000','001','010','011','100','101','110','111'] 
@@ -18,37 +19,39 @@ logging.basicConfig(level=logging.DEBUG,
 container = construct.Container(
                     frametype = 'CAN_MSG',
                     service = 'REGULAR',
-                    subnet = 'NOC',
+                    subnet = 'ZERO',
                     protocol = 'LED',
                     receiver = 'ADDR_LED',
                     sender = 'ADDR_GW',
-                    length = 3,
-                    mode = 'MASTER',
-                    leds = [0,0,1,0],
+                    mode = 'FADE',
+                    length = 7,
+                    leds = [1,1,1,1],
                     colormode = 'RGB',
-                    led = 2,
+                    time = 3000,
+                    color1 = 255,
+                    color2 = 255,
+                    color3 = 255,
                     )
 
 
+try:
+    s = sender.Sender()
+    s.sendMessage(container)
+    time.sleep(0.5)
+    while(1):
+        hue = random.randint(0,255)
+        container.color1 = hue
+        container.color3 = 255
+        #s.sendMessage(container)
+        time.sleep(3)
+        container.color1 = hue
+        container.color3 = 0
+        #s.sendMessage(container)
+        time.sleep(3)
+except KeyboardInterrupt:
+        print 'Keyboard Interrupt'
 
-s = sender.Sender()
-s.sendMessage(container)
-
-
-#print container
-
-#payload = protocol.gw_msg.build(container)
-
-#hexdump = ''
-#for char in payload:
-#    hexdump += "\\x%02x" % int(ord(char))
-#print hexdump
-
-#bindump = ''
-#for i,char in enumerate(payload):
-#    bindump += "%d|%s|" % (i,binx(ord(char),8))
-#print bindump
-
-#container = protocol.gw_msg.parse(payload)
-
-#print container
+print 'Killing server crap'
+time.sleep(2)
+s.stop()
+print 'Killed server crap'
