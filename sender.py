@@ -1,8 +1,9 @@
 import socket, time, random, struct, threading, signal
 import logging
 
-import protocol
-import construct
+#import protocol
+#import construct
+from canbus import CANProtocol
 
 #commandstructure: command + led + args
 #normally bytes.
@@ -26,6 +27,7 @@ class Sender():
         self.port = port
         self.connManager = ConnectionManager(host, port)
         self.connManager.start()
+        self.protocol = CANProtocol()
         time.sleep(0.5)
 
     def sendMessage(self,container):
@@ -49,29 +51,29 @@ class Sender():
     def setMaster(self, led, master):
         """Set master for LED"""
         logging.info("setting master for led %d to %d"%(led,master))
-        self.connManager.send(COMMANDS['setMaster'] + struct.pack('B', led) + struct.pack('B', master))
+        self.connManager.send(self.protocol.setMaster(master, led=led))
+        #self.connManager.send(COMMANDS['setMaster'] + struct.pack('B', led) + struct.pack('B', master))
         
     def setAllMaster(self, master):
         """Set master for LED"""
-        logging.info("setting master all leds to %d"%(master))
-        for i in range(0,4):
-            self.setMaster(i, master)
+        logging.info("setting master for all leds to %d"%(master))
+        self.connManager.send(self.protocol.setMaster(master))
 
     def setColorRGB(self, led, r, g, b):
         """Set permanent RGB color for LED to given RGB (0-255)."""
         logging.info("setting RGB color of led %d %03d|%03d|%03d"%(led,r,g,b))
-        self.connManager.send(COMMANDS['setColorRGB'] + struct.pack('B', led) + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
+        self.connManager.send(self.protocol.setColorRGB(0, r, g, b, led=led))
+        #self.connManager.send(COMMANDS['setColorRGB'] + struct.pack('B', led) + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
+
+    def setAllColorRGB(self, r, g, b):
+        """Set permanent RGB color for all LEDs to given RGB (0-255)."""
+        logging.info("setting RGB color of all leds %03d|%03d|%03d"%(r,g,b))
+        self.connManager.send(self.protocol.setColorRGB(0, r, g, b))
 
     def setColorHSV(self, led, h, s, v):
         """Set permanent HSV color for LED to given HSV (H: 0-359, S+V: 0-255)."""
         logging.info("setting HSV color of led %d %03d|%03d|%03d"%(led,h,s,v))
         self.connManager.send(COMMANDS['setColorHSV'] + struct.pack('B', led) + struct.pack('>H', h) + struct.pack('B', s) + struct.pack('B', v))
-
-    def setAllColor(self, r, g, b):
-        """Set master for LED"""
-        logging.info("setting all leds to %03d|%03d|%03d"%(r,g,b))
-        for i in range(0,4):
-            self.setColorRGB(i, r, g, b)
 
     def fadeToColor(self, led, millis, r, g, b):
         """Fade LED to given RGB (0-255) in given time (0-65535)."""
@@ -89,56 +91,58 @@ class Sender():
     def police(self, sleep=0.05):
         """Start Kotzmode. Interrupt with Ctrl+C"""
         while True:
-            self.setColorRGB(0,0,0,0)
-            self.setColorRGB(0,0,0,1)
-            self.setColorRGB(0,0,0,2)
-            self.setColorRGB(0,0,0,3)
+            self.setColorRGB(0b0001,0,0,0)
+            self.setColorRGB(0b0010,0,0,0)
+            self.setColorRGB(0b0100,0,0,0)
+            self.setColorRGB(0b1000,0,0,0)
             for i in range(0,2):
-                self.setColorRGB(0,0,255,0)
-                self.setColorRGB(0,0,255,2)
-                self.setColorRGB(0,0,255,3)
+                self.setColorRGB(0b0001,0,0,128)
+                self.setColorRGB(0b0100,0,0,128)
+                self.setColorRGB(0b1000,0,0,255)
                 time.sleep(sleep)
-                self.setColorRGB(0,0,0,0)
-                self.setColorRGB(0,0,0,2)
-                self.setColorRGB(0,0,0,3)
+                self.setColorRGB(0b0001,0,0,0)
+                self.setColorRGB(0b0100,0,0,0)
+                self.setColorRGB(0b1000,0,0,0)
                 time.sleep(sleep)
-            time.sleep(sleep*5)
+            time.sleep(sleep*8)
             for i in range(0,2):
-                self.setColorRGB(255,0,0,0)
-                self.setColorRGB(255,0,0,2)
-                self.setColorRGB(255,0,0,1)
+                self.setColorRGB(0b0001,0,0,128)
+                self.setColorRGB(0b0100,0,0,128)
+                self.setColorRGB(0b0010,255,0,0)
                 time.sleep(sleep)
-                self.setColorRGB(0,0,0,0)
-                self.setColorRGB(0,0,0,2)
-                self.setColorRGB(0,0,0,1)
+                self.setColorRGB(0b0001,0,0,0)
+                self.setColorRGB(0b0100,0,0,0)
+                self.setColorRGB(0b0010,0,0,0)
                 time.sleep(sleep)
-            time.sleep(sleep*5)
+            time.sleep(sleep*8)
 
-    def police_old(self):
+    def police_old(self,sleep=0.1):
         """Start another Kotzmode. Interrupt with Ctrl+C"""
+        self.setAllMaster(0)
         while True:
             for i in range(0,2):
-                self.setColorRGB(255,0,0)
-                time.sleep(0.1)
-                self.setColorRGB(0,0,255)
-                time.sleep(0.1)
-            self.setColorRGB(0,0,0)
-            time.sleep(0.05)
+                self.setColorRGB(0,255,0,0)
+                time.sleep(sleep)
+                self.setColorRGB(0,0,0,255)
+                time.sleep(sleep)
+            self.setColorRGB(0,0,0,0)
+            time.sleep(sleep/2)
             for i in range(0,2):
-                self.setColorRGB(255,0,0)
-                time.sleep(0.1)
-                self.setColorRGB(0,0,255)
-                time.sleep(0.1)
-            self.setColorRGB(255,255,255)
-            time.sleep(0.05)
+                self.setColorRGB(0,255,0,0)
+                time.sleep(sleep)
+                self.setColorRGB(0,0,0,255)
+                time.sleep(sleep)
+            self.setColorRGB(0,255,255,255)
+            time.sleep(sleep/2)
     
-    def strobe(self, led, millisoff=80, millistotal=100):
+    def strobe(self, led, time=80, r=255, g=255, b=255, factor=5):
         """Start strobemode
         
         params:
         millisoff: light off for this time
-        millistotal: total time of a cycle (millison = millistotal-millisoff)"""
-        self.connManager.send(COMMANDS['strobe'] + struct.pack('B', led) + struct.pack('>H', millisoff) + struct.pack('>H', millistotal))
+        millistotal: total time of a cycle (millis_on = millis_total-millis_off)"""
+        self.connManager.send(self.protocol.strobe(time, r, g, b, factor, led=led))
+        #self.connManager.send(COMMANDS['strobe'] + struct.pack('B', led) + struct.pack('>H', millisoff) + struct.pack('>H', millistotal))
 
     def randomFading(self, led, millis=50):
         """Start automatic fading mode.
@@ -157,7 +161,13 @@ class Sender():
 
     def cycle(self, millis=300):
         """Cycle colors around every millis milliseconds"""
-        self.connManager.send(COMMANDS['cycle'] + struct.pack('B', 0) + struct.pack('>H', millis))
+        self.connManager.send(self.protocol.cycle(millis))
+        #self.connManager.send(COMMANDS['cycle'] + struct.pack('B', 0) + struct.pack('>H', millis))
+        
+    def runningLight(self, millis=100, r=0, g=0, b=255):
+        self.setAllColorRGB(0,0,0)
+        self.setColorRGB(0b0001,r,g,b)
+        self.cycle(millis)
 
 #    def fadeSoftRandom(self,sleep=0.1,minchange=1,maxchange=7):
 #        """Start automatic fading mode. Fade in software, much networktraffic - don't use. Interrupt with Ctrl+C
@@ -204,6 +214,7 @@ class ConnectionManager(threading.Thread):
         self.lastReceived = ''
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.daemon = True
+        self.ping = True
     
     def run(self):
         print 'ConnectionManager started. Trying to connect...'
@@ -214,7 +225,8 @@ class ConnectionManager(threading.Thread):
             else:
                 self.recvLock.acquire(False)
                 try:
-                    self.send(struct.pack('B', 1), log=False)
+                    if self.ping:
+                        self.send(struct.pack('B', 1), log=False)
                     self.lastReceived = 'untouched'
                     self.lastReceived = self.sock.recv(4096)
                     if not self.stopped:
@@ -246,6 +258,9 @@ class ConnectionManager(threading.Thread):
         self.lastReceived = 'Connection error'
         self.recvLock.release()
         self.recvLock.acquire()
+        
+    def setEnablePing(self, ping):
+        self.ping = ping
 
     def recv(self):
         self.recvLock.acquire()
@@ -298,11 +313,14 @@ class ConnectionManager(threading.Thread):
             if log:
                 logging.debug("sendLock acquired")
                 logging.info("sending unicode %s"%msg)
+            hexmsg = ''
             binmsg = ''
             for c in msg:
                 binmsg += Helper.format8bit(bin(struct.unpack('B',c)[0])) + ' '
+                hexmsg += hex(struct.unpack('B',c)[0]) + ' '
             if log:
                 logging.info("sending binary %s"%binmsg)
+                logging.info("sending hex %s"%hexmsg)
             try:
                 self.sock.sendall(msg)
             except Exception, e:
@@ -313,7 +331,6 @@ class ConnectionManager(threading.Thread):
             self.sendLock.release()
         else:
             logging.warn("Not sent. Socket not connected")
-        
 
 class Helper:
     @staticmethod
