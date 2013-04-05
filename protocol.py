@@ -1,8 +1,8 @@
 # use construct to handle binary messages to and from the CAN Gateway
 # message structure:
-# id(uint32),flags(uin8,rtr(:1),extended(:0)),length(uint8),data(uint8[length])
-from construct import *
 
+
+from construct import *
 
 can_proto_ping = Struct('can_proto_ping',
                     OneOf(ULInt8('length'),range(9)),
@@ -20,13 +20,13 @@ can_proto_text = Struct('can_proto_text',
 
 can_proto_sync = Struct('can_proto_sync',
                     OneOf(ULInt8('length'),[1]),
-                    Enum(ULInt8('ledState'),
+                    Enum(ULInt8('led_state'),
                         OFF = 0x00,
                         ON = 0x01,
-                        _default_ = 'TOGGLE',
+                        TOGGLE = 0x02,
                     ),
                 )
-                
+
 can_proto_acstate = Struct('can_proto_acstate',
                         OneOf(ULInt8('length'),[5]),
                         ULInt8('temp'),
@@ -89,13 +89,13 @@ can_proto_led = Struct('can_proto_led',
                                                         ULInt16('time1'),
                                                         ULInt8('color1'),
                                                         ULInt8('color2'),
-                                                        ULInt8('color3'), 
+                                                        ULInt8('color3'),
                                                  ),),
                                         'FADE': Embed( Struct('params',
                                                         ULInt16('time1'),
                                                         ULInt8('color1'),
                                                         ULInt8('color2'),
-                                                        ULInt8('color3'), 
+                                                        ULInt8('color3'),
                                                  ),),
                                         'RANDOM': Embed(Struct('params',
                                                         ULInt16('time1'),
@@ -111,7 +111,7 @@ can_proto_led = Struct('can_proto_led',
                                                         ULInt16('time1'),
                                                         ULInt8('color1'),
                                                         ULInt8('color2'),
-                                                        ULInt8('color3'), 
+                                                        ULInt8('color3'),
                                                         ULInt8('factor'),
                                                  ),),
                                         'CYCLE': Embed(Struct('params',ULInt16('time1'))),
@@ -166,6 +166,7 @@ can_msg = Struct('can_message',
             Enum(Byte('receiver'),
                 ADDR_GW = 32,
                 ADDR_LED = 64,
+                ADDR_BC = 255,
                 _default_ = 'UNKNOWN',
             ),
             Switch('data', lambda ctx: ctx['protocol'],
@@ -181,14 +182,14 @@ can_msg = Struct('can_message',
         )
 
 ping_msg = Struct('ping_msg',
-            ULInt8('char'),
+            ULInt8('byte'),
         )
 
 ascii_msg = Struct('ascii_msg',
-            ULInt32('length'),
-            String('payload','length'),
-            ),
-           .
+                    ULInt32('length'),
+                    String('content',lambda ctx: ctx.length),
+            )
+
 gw_msg = Struct('gw_msg',
                 Enum(Byte('frametype'),
                     CAN_MSG = 0x15,
@@ -205,3 +206,84 @@ gw_msg = Struct('gw_msg',
                     default = Pass
                 ),
             )
+
+
+ethernet_msg = Struct('msg',
+                    OptionalGreedyRange(
+                        Struct('sub_msgs',
+                            ULInt16('ether_length'),
+                            String('content',lambda ctx: ctx.ether_length)
+                        )
+                    )
+                )
+
+class PacketHandlerAdapter(Adapter):
+    def _encode(self, msg, context):
+        sub_msgs = []
+        for container in msg:
+            sub_msg_content = gw_msg.build(container)
+            sub_msg_len = len(sub_msg_content)
+            sub_container = Container(ether_length = sub_msg_len,
+                                        content = sub_msg_content)
+            sub_msgs.append(sub_container)
+        return Container(sub_msgs = sub_msgs)
+
+    def _decode(self, msg, context):
+        sub_msgs = []
+        for i,container in enumerate(msg.sub_msgs):
+            sub_msg = gw_msg.parse(container.content)
+            sub_msgs.append(sub_msg)
+        return sub_msgs
+
+def PacketHandler():
+    return PacketHandlerAdapter(ethernet_msg)
+
+def gotohex(string):
+    hex = ''
+    for c in string:
+        hex += '\\x%02x' % ord(c)
+    return hex
+
+def main():
+
+    gw_msg_ping = Container(frametype = 'PING_MSG',
+                            byte = 0x08
+                            )
+    gw_msg_ascii = Container(frametype = 'ASCII_MSG',
+                            length = 5,
+                            content = 'abcde'
+                            )
+    gw_msg_can = Container(frametype = 'CAN_MSG',
+                            service = 'REGULAR',
+                            subnet = 'NOC',
+                            protocol = 'SYNC',
+                            sender = 'ADDR_GW',
+                            receiver = 'ADDR_BC',
+                            length = 1,
+                            led_state = 'TOGGLE'
+                        )
+
+    can_string = gw_msg.build(gw_msg_can)
+    ascii_string = gw_msg.build(gw_msg_ascii)
+    ping_string = gw_msg.build(gw_msg_ping)
+
+    print 'Single msg strings (for comparison):\n'
+    print 'ping (len \\x%02x): ' %len(ping_string) + gotohex(ping_string)
+    print 'ascii(len \\x%02x): ' %len(ascii_string) + gotohex(ascii_string)
+    print 'can  (len \\x%02x): ' %len(can_string) + gotohex(can_string)
+
+    gw_msgs = [gw_msg_ping,gw_msg_ascii,gw_msg_can]
+    send_string = PacketHandler().build(gw_msgs)
+    print '\n\nSend-String for Ethernet (ping,ascii,can):\n'
+    print gotohex(send_string)
+
+    gw_msg_containers = PacketHandler().parse(send_string)
+    print '\n\ngw_msgs as they fall out of PacketHandler:\n'
+    print gw_msg_containers
+
+    print '\n\nunpacked messages in pretty print:\n'
+    for msg in gw_msg_containers:
+        print '\n' + str(msg)
+
+if __name__ == '__main__':
+    main()
