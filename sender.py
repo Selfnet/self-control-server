@@ -1,8 +1,8 @@
 import socket, time, random, struct, threading, signal
 import logging
 
-#import protocol
-#import construct
+import protocol
+import construct
 from canbus import CANProtocol
 
 #commandstructure: command + led + args
@@ -27,7 +27,7 @@ class Sender():
         self.port = port
         self.connManager = ConnectionManager(host, port)
         self.connManager.start()
-        self.protocol = CANProtocol()
+        self.protocolArne = CANProtocol()
         time.sleep(0.5)
 
     def sendMessage(self,container):
@@ -51,24 +51,24 @@ class Sender():
     def setMaster(self, led, master):
         """Set master for LED"""
         logging.info("setting master for led %d to %d"%(led,master))
-        self.connManager.send(self.protocol.setMaster(master, led=led))
+        self.connManager.send(self.protocolArne.setMaster(master, led=led))
         #self.connManager.send(COMMANDS['setMaster'] + struct.pack('B', led) + struct.pack('B', master))
         
     def setAllMaster(self, master):
         """Set master for LED"""
         logging.info("setting master for all leds to %d"%(master))
-        self.connManager.send(self.protocol.setMaster(master))
+        self.connManager.send(self.protocolArne.setMaster(master))
 
     def setColorRGB(self, led, r, g, b):
         """Set permanent RGB color for LED to given RGB (0-255)."""
         logging.info("setting RGB color of led %d %03d|%03d|%03d"%(led,r,g,b))
-        self.connManager.send(self.protocol.setColorRGB(0, r, g, b, led=led))
+        self.connManager.send(self.protocolArne.setColorRGB(0, r, g, b, led=led))
         #self.connManager.send(COMMANDS['setColorRGB'] + struct.pack('B', led) + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
 
     def setAllColorRGB(self, r, g, b):
         """Set permanent RGB color for all LEDs to given RGB (0-255)."""
         logging.info("setting RGB color of all leds %03d|%03d|%03d"%(r,g,b))
-        self.connManager.send(self.protocol.setColorRGB(0, r, g, b))
+        self.connManager.send(self.protocolArne.setColorRGB(0, r, g, b))
 
     def setColorHSV(self, led, h, s, v):
         """Set permanent HSV color for LED to given HSV (H: 0-359, S+V: 0-255)."""
@@ -141,7 +141,7 @@ class Sender():
         params:
         millisoff: light off for this time
         millistotal: total time of a cycle (millis_on = millis_total-millis_off)"""
-        self.connManager.send(self.protocol.strobe(time, r, g, b, factor, led=led))
+        self.connManager.send(self.protocolArne.strobe(time, r, g, b, factor, led=led))
         #self.connManager.send(COMMANDS['strobe'] + struct.pack('B', led) + struct.pack('>H', millisoff) + struct.pack('>H', millistotal))
 
     def randomFading(self, led, millis=50):
@@ -161,7 +161,7 @@ class Sender():
 
     def cycle(self, millis=300):
         """Cycle colors around every millis milliseconds"""
-        self.connManager.send(self.protocol.cycle(millis))
+        self.connManager.send(self.protocolArne.cycle(millis))
         #self.connManager.send(COMMANDS['cycle'] + struct.pack('B', 0) + struct.pack('>H', millis))
         
     def runningLight(self, millis=100, r=0, g=0, b=255):

@@ -18,16 +18,16 @@ logging.basicConfig(level=logging.DEBUG,
 
 container = construct.Container(
                     frametype = 'CAN_MSG',
-                    service = 'REGULAR',
+                    priority = 'REGULAR',
                     subnet = 'ZERO',
                     protocol = 'LED',
                     receiver = 'ADDR_LED',
                     sender = 'ADDR_GW',
-                    mode = 'FADE',
+                    mode = 'COLOR',
                     length = 7,
                     leds = [1,1,1,1],
                     colormode = 'RGB',
-                    time = 3000,
+                    time1 = 0,
                     color1 = 255,
                     color2 = 255,
                     color3 = 255,
@@ -36,18 +36,44 @@ container = construct.Container(
 
 try:
     s = sender.Sender()
-    s.sendMessage(container)
+    #s.sendMessage(container)
     time.sleep(0.5)
+
+#    while(1):
+#        s.setAllColorRGB(0,0,0)
+#        time.sleep(0.1)
+#        s.setAllColorRGB(255,255,255)
+#        time.sleep(0.1)
+
     while(1):
-        hue = random.randint(0,255)
-        container.color1 = hue
-        container.color3 = 255
-        #s.sendMessage(container)
-        time.sleep(3)
-        container.color1 = hue
+        rand_time = random.randint(60,240)
+        time.sleep(rand_time)
+
+        color = random.randint(0,255)
+        container.color1 = color
+        color = random.randint(0,255)
+        container.color2 = color
+        color = random.randint(0,255)
+        container.color3 = color
+        s.sendMessage(container)
+        time.sleep(0.05)
+        container.color1 = 0
+        container.color2 = 0
         container.color3 = 0
-        #s.sendMessage(container)
-        time.sleep(3)
+        s.sendMessage(container)
+
+#    while(1):
+#        leds = [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]]
+#        for led in leds:
+#            container.leds = led
+#            color = random.randint(0,255)
+#            container.color1 = color
+#            color = random.randint(0,255)
+#            container.color2 = color
+#            color = random.randint(0,255)
+#            container.color3 = color
+#            s.sendMessage(container)
+#            time.sleep(0.25)
 except KeyboardInterrupt:
         print 'Keyboard Interrupt'
 
