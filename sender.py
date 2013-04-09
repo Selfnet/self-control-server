@@ -23,6 +23,11 @@ COMMANDS = {
 
 class Sender():
     def __init__(self, host='10.43.100.112', port=23):
+        self.LED1 = 0b0001
+        self.LED2 = 0b0010
+        self.LED3 = 0b0100
+        self.LED4 = 0b1000
+        self.LEDALL = 0b1111
         self.host = host
         self.port = port
         self.connManager = ConnectionManager(host, port)
@@ -91,18 +96,15 @@ class Sender():
     def police(self, sleep=0.05):
         """Start Kotzmode. Interrupt with Ctrl+C"""
         while True:
-            self.setColorRGB(0b0001,0,0,0)
-            self.setColorRGB(0b0010,0,0,0)
-            self.setColorRGB(0b0100,0,0,0)
-            self.setColorRGB(0b1000,0,0,0)
+            self.setColorRGB(self.LEDALL,0,0,0)
             for i in range(0,2):
-                self.setColorRGB(0b0001,0,0,128)
-                self.setColorRGB(0b0100,0,0,128)
-                self.setColorRGB(0b1000,0,0,255)
+                self.setColorRGB(self.LED1,0,0,128)
+                self.setColorRGB(self.LED3,0,0,128)
+                self.setColorRGB(self.LED4,0,0,255)
                 time.sleep(sleep)
-                self.setColorRGB(0b0001,0,0,0)
-                self.setColorRGB(0b0100,0,0,0)
-                self.setColorRGB(0b1000,0,0,0)
+                self.setColorRGB(self.LED1,0,0,0)
+                self.setColorRGB(self.LED3,0,0,0)
+                self.setColorRGB(self.LED4,0,0,0)
                 time.sleep(sleep)
             time.sleep(sleep*8)
             for i in range(0,2):
@@ -121,18 +123,18 @@ class Sender():
         self.setAllMaster(0)
         while True:
             for i in range(0,2):
-                self.setColorRGB(0,255,0,0)
+                self.setColorRGB(self.LEDALL,255,0,0)
                 time.sleep(sleep)
-                self.setColorRGB(0,0,0,255)
+                self.setColorRGB(self.LEDALL,0,0,255)
                 time.sleep(sleep)
-            self.setColorRGB(0,0,0,0)
+            self.setColorRGB(self.LEDALL,0,0,0)
             time.sleep(sleep/2)
             for i in range(0,2):
-                self.setColorRGB(0,255,0,0)
+                self.setColorRGB(self.LEDALL,255,0,0)
                 time.sleep(sleep)
-                self.setColorRGB(0,0,0,255)
+                self.setColorRGB(self.LEDALL,0,0,255)
                 time.sleep(sleep)
-            self.setColorRGB(0,255,255,255)
+            self.setColorRGB(self.LEDALL,255,255,255)
             time.sleep(sleep/2)
     
     def strobe(self, led, time=80, r=255, g=255, b=255, factor=5):
