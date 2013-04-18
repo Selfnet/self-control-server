@@ -30,10 +30,18 @@ class Sender():
         self.LEDALL = 0b1111
         self.host = host
         self.port = port
-        self.connManager = ConnectionManager(host, port)
-        self.connManager.start()
+        self._connManager = ConnectionManager(host, port)
+        self._connManager.start()
         self.protocolArne = CANProtocol()
         time.sleep(0.5)
+        self.baseContainer = construct.Container(
+                    frametype = 'CAN_MSG',
+                    priority = 'REGULAR',
+                    subnet = 'ZERO',
+                    protocol = 'LED',
+                    receiver = 'ADDR_LED',
+                    sender = 'ADDR_GW'
+        )
 
     def sendMessage(self,container):
         ret = 0
@@ -51,47 +59,58 @@ class Sender():
         logging.debug('Attempting to send container\n%s\n' % str(container)\
                         +'Hex content: %s\n' % hexdump\
                         + 'Binary content: %s' % bindump)
-        self.connManager.send(payload)
+        self._connManager.send(payload)
+        
+    def forceReconnect(self):
+        self._connManager.disconnect()
         
     def setMaster(self, led, master):
         """Set master for LED"""
         logging.info("setting master for led %d to %d"%(led,master))
-        self.connManager.send(self.protocolArne.setMaster(master, led=led))
-        #self.connManager.send(COMMANDS['setMaster'] + struct.pack('B', led) + struct.pack('B', master))
+        self._connManager.send(self.protocolArne.setMaster(master, led=led))
+        #self._connManager.send(COMMANDS['setMaster'] + struct.pack('B', led) + struct.pack('B', master))
         
     def setAllMaster(self, master):
         """Set master for LED"""
         logging.info("setting master for all leds to %d"%(master))
-        self.connManager.send(self.protocolArne.setMaster(master))
+        self._connManager.send(self.protocolArne.setMaster(master))
 
     def setColorRGB(self, led, r, g, b):
         """Set permanent RGB color for LED to given RGB (0-255)."""
         logging.info("setting RGB color of led %d %03d|%03d|%03d"%(led,r,g,b))
-        self.connManager.send(self.protocolArne.setColorRGB(0, r, g, b, led=led))
-        #self.connManager.send(COMMANDS['setColorRGB'] + struct.pack('B', led) + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
-
-    def setAllColorRGB(self, r, g, b):
-        """Set permanent RGB color for all LEDs to given RGB (0-255)."""
-        logging.info("setting RGB color of all leds %03d|%03d|%03d"%(r,g,b))
-        self.connManager.send(self.protocolArne.setColorRGB(0, r, g, b))
+        cont = self.baseContainer
+        cont.update(construct.Container(
+                mode = 'COLOR',
+                length = 7,
+                leds = led,
+                colormode = 'RGB',
+                time1 = 0,
+                color1 = r,
+                color2 = g,
+                color3 = b,
+            )
+        )
+        self._connManager.sendContainer(cont)
+        #self._connManager.send(self.protocolArne.setColorRGB(0, r, g, b, led=led))
+        #self._connManager.send(COMMANDS['setColorRGB'] + struct.pack('B', led) + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
 
     def setColorHSV(self, led, h, s, v):
         """Set permanent HSV color for LED to given HSV (H: 0-359, S+V: 0-255)."""
         logging.info("setting HSV color of led %d %03d|%03d|%03d"%(led,h,s,v))
-        self.connManager.send(COMMANDS['setColorHSV'] + struct.pack('B', led) + struct.pack('>H', h) + struct.pack('B', s) + struct.pack('B', v))
+        self._connManager.send(COMMANDS['setColorHSV'] + struct.pack('B', led) + struct.pack('>H', h) + struct.pack('B', s) + struct.pack('B', v))
 
     def fadeToColor(self, led, millis, r, g, b):
         """Fade LED to given RGB (0-255) in given time (0-65535)."""
         logging.info("fade to color %03d|%03d|%03d in %.3f seconds"%(r,g,b,millis/1000.0))
-        self.connManager.send(COMMANDS['fadeToColor'] + struct.pack('B', led) + struct.pack('>H', millis) + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
+        self._connManager.send(COMMANDS['fadeToColor'] + struct.pack('B', led) + struct.pack('>H', millis) + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
 
     def white(self):
         """Shortcut to set LEDs permanent white (full brightness)"""
-        self.setColorRGB(254, 254, 254)
+        self.setColorRGB(self.LEDALL, r=255, g=255, b=255)
 
     def black(self):
         """Shortcut to set LEDs permanent dark"""
-        self.setColorRGB(0, 0, 0)
+        self.setColorRGB(self.LEDALL, r=0, g=0, b=0)
         
     def police(self, sleep=0.05):
         """Start Kotzmode. Interrupt with Ctrl+C"""
@@ -141,10 +160,24 @@ class Sender():
         """Start strobemode
         
         params:
-        millisoff: light off for this time
-        millistotal: total time of a cycle (millis_on = millis_total-millis_off)"""
-        self.connManager.send(self.protocolArne.strobe(time, r, g, b, factor, led=led))
-        #self.connManager.send(COMMANDS['strobe'] + struct.pack('B', led) + struct.pack('>H', millisoff) + struct.pack('>H', millistotal))
+        time: total time of a cycle (millis_on = millis_total-millis_off)
+        factor: time/factor = time on in one cycle
+        r, g, b: color
+        """
+        cont = self.baseContainer
+        cont.update(construct.Container(
+                mode = 'STROBE',
+                length = 8,
+                leds = led,
+                colormode = 'RGB',
+                time1 = time,
+                color1 = r,
+                color2 = g,
+                color3 = b,
+                factor = factor,
+            )
+        )
+        self._connManager.sendContainer(cont)
 
     def randomFading(self, led, millis=50):
         """Start automatic fading mode.
@@ -152,24 +185,66 @@ class Sender():
         params:
         led: led to fade
         millis: time between 2 fading steps"""
-        self.connManager.send(COMMANDS['randomFading'] + struct.pack('B', led) + struct.pack('>H', millis))
+        self._connManager.send(COMMANDS['randomFading'] + struct.pack('B', led) + struct.pack('>H', millis))
 
     def randomColor(self, led, millis=1000):
         """Set all sleep milliseconds a new random color.
         
         params:
         sleep: sleeptime between 2 colors in milliseconds"""
-        self.connManager.send(COMMANDS['randomColor'] + struct.pack('B', led) + struct.pack('>H', millis))
+        self._connManager.send(COMMANDS['randomColor'] + struct.pack('B', led) + struct.pack('>H', millis))
 
     def cycle(self, millis=300):
         """Cycle colors around every millis milliseconds"""
-        self.connManager.send(self.protocolArne.cycle(millis))
-        #self.connManager.send(COMMANDS['cycle'] + struct.pack('B', 0) + struct.pack('>H', millis))
+        self._connManager.send(self.protocolArne.cycle(millis))
+        #self._connManager.send(COMMANDS['cycle'] + struct.pack('B', 0) + struct.pack('>H', millis))
         
     def runningLight(self, millis=100, r=0, g=0, b=255):
-        self.setAllColorRGB(0,0,0)
-        self.setColorRGB(0b0001,r,g,b)
+        """Create a light with given color that runs in circles"""
+        self.setColorRGB(self.LEDALL,0,0,0)
+        self.setColorRGB(self.LED1,r,g,b)
         self.cycle(millis)
+        
+    def ping(self,times=4,timeout=4,receiver='ADDR_LED',numPongs=1):
+        """Ping the CAN-Nodes"""
+        pingContainer = construct.Container(
+                    frametype = 'CAN_MSG',
+                    priority = 'REGULAR',
+                    subnet = 'ZERO',
+                    protocol = 'PING',
+                    receiver = receiver,
+                    sender = 'ADDR_GW',
+                    length = 1,
+                    data = [0xFF],
+        )
+        for i in range(times):
+            callbackEvent = threading.Event()
+            var = {}
+            var['numPongs'] = numPongs
+            var['pongContainers'] = []
+            def callback(container):
+                var['pongContainers'].append(container)
+                var['numPongs'] -= 1
+                if var['numPongs'] > 0:
+                    self._connManager.regPongCallback(callback)
+                else:
+                    callbackEvent.set()
+            self._connManager.regPongCallback(callback)
+            self._connManager.sendContainer(pingContainer)
+            startTime = time.time()
+            callbackEvent.wait(timeout=timeout)
+            rtt = time.time() - startTime
+            if callbackEvent.isSet():
+                for cont in var['pongContainers']:
+                    print "#%d received pong from %s. RTT %.4f seconds, can_time is %s"%(i,cont['sender'],rtt,cont['can_time'])
+            else:
+                print "#%d ping timeout"%i
+            callbackEvent.clear()
+    
+    def testConnection(self):
+        while True:
+            self.setColorRGB(s.LEDALL,r=random.randint(0,255), g=random.randint(0,255), b=random.randint(0,255))
+            time.sleep(1)
 
 #    def fadeSoftRandom(self,sleep=0.1,minchange=1,maxchange=7):
 #        """Start automatic fading mode. Fade in software, much networktraffic - don't use. Interrupt with Ctrl+C
@@ -195,13 +270,13 @@ class Sender():
 #    def light(self, state, lightnr=1):
 #        """Set lightnr (1 = cold bright light) to given state: 0 (off) or 1 (on)"""
 #        state = state + 1
-#        self.connManager.send(COMMANDS['light'] + struct.pack('B', lightnr) + struct.pack('B', state))
+#        self._connManager.send(COMMANDS['light'] + struct.pack('B', lightnr) + struct.pack('B', state))
 
     def stop(self):
         """Stop the Sender. Close all networkconnections and stop."""
         logging.debug('Received stop...')
-        self.connManager.stop()
-        self.connManager.join()
+        self._connManager.stop()
+        self._connManager.join()
 
 class ConnectionManager(threading.Thread):
     def __init__(self,  host, port):
@@ -210,13 +285,22 @@ class ConnectionManager(threading.Thread):
         self.port = port
         self.connected = False
         self.sendLock = threading.Lock()
-        self.recvLock = threading.Lock()
-        self.recvLock.acquire()
         self.stopped = False
-        self.lastReceived = ''
+        self.lastReceivedPlain = ''
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.daemon = True
-        self.ping = True
+        self.ping = False
+        self.pongCallbacks = []
+        self.pingContainer = construct.Container(
+                    frametype = 'CAN_MSG',
+                    priority = 'REGULAR',
+                    subnet = 'ZERO',
+                    protocol = 'PING',
+                    receiver = 'ADDR_BC',
+                    sender = 'ADDR_GW',
+                    length = 1,
+                    data = [0xFF],
+        )
     
     def run(self):
         print 'ConnectionManager started. Trying to connect...'
@@ -225,23 +309,33 @@ class ConnectionManager(threading.Thread):
             if not self.connected:
                 self.tryconnect()
             else:
-                self.recvLock.acquire(False)
                 try:
                     if self.ping:
-                        self.send(struct.pack('B', 1), log=False)
-                    self.lastReceived = 'untouched'
-                    self.lastReceived = self.sock.recv(4096)
+                        self.sendContainer(self.pingContainer, log=False)
+                    received = None
+                    received = self.sock.recv(4096)
                     if not self.stopped:
-                        if self.lastReceived:
-                            logging.debug("received: %s"%self.lastReceived)
-                            self.recvLock.release()
-                            self.recvLock.acquire()
+                        if received:
+                            logging.debug("received unicode: %s"%str(received))
+                            logging.debug("received hex: %s"%Helper.hexdump(received))
+                            for container in protocol.PacketHandler().parse(received):
+                                logging.debug('Received container %s'%str(container))
+                                try:
+                                    if container['frametype'] == 'CAN_MSG':
+                                        if container['protocol'] == 'PONG':
+                                            for i in range(len(self.pongCallbacks)):
+                                                cb = self.pongCallbacks.pop()
+                                                cb(container)
+                                except Exception, e:
+                                    logging.debug('exception when interpreting container: %s'%str(e))
+                                    logging.exception(e)
                         else:
                             self.connectionReset()
                 except socket.timeout, e:
                     pass
                 except Exception, e:
                     logging.debug('in statechecker exception: %s'%str(e))
+                    logging.exception(e)
                     self.connectionReset()
         logging.info('Closing connection...')
         try:
@@ -258,16 +352,12 @@ class ConnectionManager(threading.Thread):
         self.sendLock.acquire()
         self.connected = False
         self.lastReceived = 'Connection error'
-        self.recvLock.release()
-        self.recvLock.acquire()
         
     def setEnablePing(self, ping):
         self.ping = ping
 
-    def recv(self):
-        self.recvLock.acquire()
-        self.recvLock.release()
-        return self.lastReceived
+    def regPongCallback(self, cb):
+        self.pongCallbacks.append(cb)
     
     def connect(self):
         self.sendLock.acquire(False)
@@ -306,6 +396,23 @@ class ConnectionManager(threading.Thread):
                 logging.info(e)
                 time.sleep(0.1)
                 logging.debug("Trying to connect...")
+                
+    def sendContainer(self,container,log=True):
+        ret = 0
+        payload = ''
+        
+        try:
+            payload = protocol.gw_msg.build(container)
+        except Exception,e:
+            logging.error('Exception when building container: %s'%str(e))
+            logging.exception(e)
+            ret = 1
+
+        #hexdump = Helper.hexdump(payload)
+        #bindump = Helper.bindump(payload)
+        if log:
+            logging.debug('Sending container\n%s\n' % str(container))
+        self.send(payload, log)
 
     def send(self, msg, log=True):
         if self.connected:
@@ -322,7 +429,7 @@ class ConnectionManager(threading.Thread):
                 hexmsg += hex(struct.unpack('B',c)[0]) + ' '
             if log:
                 logging.info("sending binary %s"%binmsg)
-                logging.info("sending hex %s"%hexmsg)
+                logging.info("sending hex %s"%Helper.hexdump(msg))
             try:
                 self.sock.sendall(msg)
             except Exception, e:
@@ -343,7 +450,7 @@ class Helper:
     def hexdump(string):
         hexdump = ''
         for char in string:
-            hexdump += "\\x%02x" % int(ord(char))
+            hexdump += "0x%02x " % int(ord(char))
         return hexdump
 
     @staticmethod
