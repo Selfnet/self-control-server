@@ -22,7 +22,7 @@ COMMANDS = {
 }
 
 class Sender():
-    def __init__(self, host='10.43.100.112', port=23):
+    def __init__(self, host='10.43.100.111', port=23):
         self.LED1 = 0b0001
         self.LED2 = 0b0010
         self.LED3 = 0b0100
@@ -74,6 +74,32 @@ class Sender():
         """Set master for LED"""
         logging.info("setting master for all leds to %d"%(master))
         self._connManager.send(self.protocolArne.setMaster(master))
+
+    def getColorRGB(self, led):
+        """Get current color of given LED from Node"""
+        cont = self.baseContainer
+        cont.update(construct.Container(
+                mode = 'GETCOLOR',
+                length = 2,
+                leds = led,
+                colormode = 'RGB',
+                time = 10,
+            )
+        )
+        callbackEvent = threading.Event()
+        var = {}
+        var['response'] = "timeout"
+        def callback(container):
+            var['response'] = container
+            callbackEvent.set()
+        self._connManager.regGetColorCallback(callback)
+        self._connManager.sendContainer(cont)
+        callbackEvent.wait(timeout=5)
+        if callbackEvent.isSet():
+            print "RGB: %d|%d|%d"%(var['response'].color1,var['response'].color2,var['response'].color3)
+        else:
+            print "Get color request timed out!"
+        return var['response']
 
     def setColorRGB(self, led, r, g, b):
         """Set permanent RGB color for LED to given RGB (0-255)."""
@@ -291,6 +317,7 @@ class ConnectionManager(threading.Thread):
         self.daemon = True
         self.ping = False
         self.pongCallbacks = []
+        self.getColorCallbacks = []
         self.pingContainer = construct.Container(
                     frametype = 'CAN_MSG',
                     priority = 'REGULAR',
@@ -326,6 +353,11 @@ class ConnectionManager(threading.Thread):
                                             for i in range(len(self.pongCallbacks)):
                                                 cb = self.pongCallbacks.pop()
                                                 cb(container)
+                                        elif container['protocol'] == 'LED':
+                                            if container['mode'] == 'GETCOLORRESPONSE':
+                                                for i in range(len(self.getColorCallbacks)):
+                                                    cb = self.getColorCallbacks.pop()
+                                                    cb(container)
                                 except Exception, e:
                                     logging.debug('exception when interpreting container: %s'%str(e))
                                     logging.exception(e)
@@ -358,6 +390,9 @@ class ConnectionManager(threading.Thread):
 
     def regPongCallback(self, cb):
         self.pongCallbacks.append(cb)
+
+    def regGetColorCallback(self, cb):
+        self.getColorCallbacks.append(cb)
     
     def connect(self):
         self.sendLock.acquire(False)

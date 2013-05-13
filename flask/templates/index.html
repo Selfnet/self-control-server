@@ -1,0 +1,63 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+    <link href="/static/jquery-miniColors/jquery.minicolors.css" rel="stylesheet">
+    <title>ColorPicker</title>
+    <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+    <script src="/static/jquery-miniColors/jquery.minicolors.js"></script>
+</head>
+<body>
+<div class="wrapper">
+<!-- <div id="cp">
+ </div>
+ <hr style="margin:20px" />-->
+ <div id="cp2">
+ <input id="minicp" />
+ </div>
+ <div id="result" style="margin-top:50px;display:none">
+  <p>The Result:<br /><a href="http://youtu.be/WGT__unotX8" target="_blank">Watch the result here</a></p>
+ </div>
+</div>
+<script>
+$('#minicp').minicolors({
+    //animationSpeed: 100,
+    //animationEasing: 'swing',
+    change: function(hex, opacity) {
+        console.log(hex + ' - ' + opacity);
+        rgbObject = $('#minicp').minicolors('rgbObject');
+        $.post('/U2/LED/rgb/set/'+rgbObject.r+'/'+rgbObject.g+'/'+rgbObject.b);
+        $('#result').show();
+    },
+    changeDelay: 0,
+    control: 'wheel',
+    //defaultValue: '',
+    //hide: null,
+    //hideSpeed: 100,
+    inline: true,
+    //letterCase: 'lowercase',
+    //opacity: false,
+    //position: 'default',
+    //show: null,
+    //showSpeed: 100,
+    //swatchPosition: 'left',
+    //textfield: true,
+    theme: 'bootstrap'
+});
+
+function poll_color() {
+    $.ajax({
+        url: "/U2/LED/rgb/get/1/"
+    }).done(function( data ) {
+        r = ('00'+data.red.toString(16)).substr(-2)
+        g = ('00'+data.green.toString(16)).substr(-2)
+        b = ('00'+data.blue.toString(16)).substr(-2)
+        $('body').css('background-color', '#'+r+g+b);
+    }).always(function() { setTimeout('poll_color()', 1000); });;
+}
+
+$(function() {
+    poll_color();
+});
+</script>
+</body>
+</html>
