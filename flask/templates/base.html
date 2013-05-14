@@ -1,0 +1,54 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+    <title>ColorPicker</title>
+    <link href="{{ url_for('static', filename='jquery-miniColors/jquery.minicolors.css') }}" rel="stylesheet">
+    <!-- Le styles -->
+    <link href="{{ url_for('static', filename='jquery-ui-bootstrap/assets/css/bootstrap.min.css') }}" rel="stylesheet">
+    <link type="text/css" href="{{ url_for('static', filename='jquery-ui-bootstrap/css/custom-theme/jquery-ui-1.10.0.custom.css') }}" rel="stylesheet" />
+    <link type="text/css" href="{{ url_for('static', filename='jquery-ui-bootstrap/assets/css/font-awesome.min.css') }}" rel="stylesheet" />
+    <!--[if IE 7]>
+    <link rel="stylesheet" href="{{ url_for('static', filename='jquery-ui-bootstrap/assets/css/font-awesome-ie7.min.css') }}">
+    <![endif]-->
+    <!--[if lt IE 9]>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='jquery-ui-bootstrap/css/custom-theme/jquery.ui.1.10.0.ie.css') }}"/>
+    <![endif]-->
+    <link href="{{ url_for('static', filename='jquery-ui-bootstrap/assets/css/docs.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='jquery-ui-bootstrap/assets/js/google-code-prettify/prettify.css') }}" rel="stylesheet">
+
+    <!-- Le HTML5 shim, for IE6-8 support of HTML5 elements -->
+    <!--[if lt IE 9]>
+    <script src="http://html5shim.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- Le fav and touch icons -->
+    <link rel="apple-touch-icon-precomposed" sizes="144x144" href="{{ url_for('static', filename='jquery-ui-bootstrap/assets/ico/apple-touch-icon-144-precomposed.png') }}">
+    <link rel="apple-touch-icon-precomposed" sizes="114x114" href="{{ url_for('static', filename='jquery-ui-bootstrap/assets/ico/apple-touch-icon-114-precomposed.png') }}">
+    <link rel="apple-touch-icon-precomposed" sizes="72x72" href="{{ url_for('static', filename='jquery-ui-bootstrap/assets/ico/apple-touch-icon-72-precomposed.png') }}">
+    <link rel="apple-touch-icon-precomposed" href="{{ url_for('static', filename='jquery-ui-bootstrap/assets/ico/apple-touch-icon-57-precomposed.png') }}">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='jquery-ui-bootstrap/assets/ico/favicon.png') }}">
+    
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+</head>
+<body>
+<div class="wrapper">
+{% block content %}
+This should not appear!
+{% endblock %}
+<!-- Placed at the end of the document so the pages load faster -->
+<script src="{{ url_for('static', filename='jquery-ui-bootstrap/assets/js/jquery-1.9.0.min.js') }}" type="text/javascript"></script>
+<script src="{{ url_for('static', filename='jquery-ui-bootstrap/assets/js/bootstrap.min.js') }}" type="text/javascript"></script>
+<script src="{{ url_for('static', filename='jquery-ui-bootstrap/assets/js/jquery-ui-1.10.0.custom.min.js') }}" type="text/javascript"></script>
+<script src="{{ url_for('static', filename='jquery-ui-bootstrap/assets/js/google-code-prettify/prettify.js') }}" type="text/javascript"></script>
+<script src="{{ url_for('static', filename='jquery-ui-bootstrap/assets/js/docs.js') }}" type="text/javascript"></script>
+<script src="{{ url_for('static', filename='jquery-miniColors/jquery.minicolors.js') }}"></script>
+<script>
+$(function() {
+    $('button').button();
+});
+</script>
+{% block readyscripts %}
+This should not appear!
+{% endblock %}
+</body>
+</html>

@@ -1,0 +1,28 @@
+body {
+    text-align: center;
+}
+
+.wrapper {
+    text-align: center;
+}
+
+.roomwrapper {
+    border: 1px black solid;
+    margin: 50px;
+    padding: 0px;
+    width: 400px;
+}
+
+.roomlight {
+    margin: 0px;
+    padding: 0px;
+    border: 20px black solid;
+}
+
+.room {
+    text-align: center;
+    height: 500px;
+    margin: 0px;
+    padding: 50px;
+    border: 1px black solid;
+}

@@ -1,33 +1,47 @@
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
-<head>
-    <link href="/static/jquery-miniColors/jquery.minicolors.css" rel="stylesheet">
-    <title>ColorPicker</title>
-    <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
-    <script src="/static/jquery-miniColors/jquery.minicolors.js"></script>
-</head>
-<body>
-<div class="wrapper">
-<!-- <div id="cp">
- </div>
- <hr style="margin:20px" />-->
- <div id="cp2">
- <input id="minicp" />
- </div>
- <div id="result" style="margin-top:50px;display:none">
-  <p>The Result:<br /><a href="http://youtu.be/WGT__unotX8" target="_blank">Watch the result here</a></p>
- </div>
-</div>
+{% extends "base.html" %}
+
+{% block content %}
+    <div class="roomwrapper">
+        <div id="U2" class="roomlight">
+            <div class="room">
+                <h1>U2</h2>
+                <div id="cp2" style="margin-bottom:30px">
+                    <input id="minicp" />
+                </div>
+                <div style="margin-top:20px; padding-bottom:10px; border:1px solid black">
+                    <h5>Sides to set:</h5>
+                    <div id="sides">
+                        <input type="checkbox" id="left" checked /><label for="left">left</label>
+                        <input type="checkbox" id="top" checked /><label for="top">top</label>
+                        <input type="checkbox" id="bottom" checked /><label for="bottom">bottom</label>
+                        <input type="checkbox" id="right" checked /><label for="right">right</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block readyscripts %}
 <script>
+function setColorRGB(hex, opacity) {
+    rgbObject = $('#minicp').minicolors('rgbObject');
+    leds = 0;
+    if($('#U2 #top').is(':checked'))
+        leds += 1
+    if($('#U2 #right').is(':checked'))
+        leds += 2
+    if($('#U2 #bottom').is(':checked'))
+        leds += 4
+    if($('#U2 #left').is(':checked'))
+        leds += 8
+    $.post('/U2/LED/rgb/set/'+leds+'/'+rgbObject.r+'/'+rgbObject.g+'/'+rgbObject.b);
+    $('#result').show();
+}
 $('#minicp').minicolors({
     //animationSpeed: 100,
     //animationEasing: 'swing',
-    change: function(hex, opacity) {
-        console.log(hex + ' - ' + opacity);
-        rgbObject = $('#minicp').minicolors('rgbObject');
-        $.post('/U2/LED/rgb/set/'+rgbObject.r+'/'+rgbObject.g+'/'+rgbObject.b);
-        $('#result').show();
-    },
+    change: setColorRGB,
     changeDelay: 0,
     control: 'wheel',
     //defaultValue: '',
@@ -45,19 +59,42 @@ $('#minicp').minicolors({
 });
 
 function poll_color() {
-    $.ajax({
-        url: "/U2/LED/rgb/get/1/"
-    }).done(function( data ) {
-        r = ('00'+data.red.toString(16)).substr(-2)
-        g = ('00'+data.green.toString(16)).substr(-2)
-        b = ('00'+data.blue.toString(16)).substr(-2)
-        $('body').css('background-color', '#'+r+g+b);
-    }).always(function() { setTimeout('poll_color()', 1000); });;
+    for(led=1; led<=4; led++) {
+        $.ajax({
+            url: '/U2/LED/rgb/get/'+led+'/'
+        }).done( 
+        (function( led, data ) {
+            r = ('00'+data.red.toString(16)).substr(-2)
+            g = ('00'+data.green.toString(16)).substr(-2)
+            b = ('00'+data.blue.toString(16)).substr(-2)
+            side = 'default';
+            switch(led) {
+                case 1:
+                    side = 'top';
+                    break;
+                case 2:
+                    side = 'right';
+                    break;
+                case 3:
+                    side = 'bottom';
+                    break;
+                case 4:
+                    side = 'left';
+                    break;
+            }
+            $('#U2').css('border-'+side+'-color', '#'+r+g+b);
+        }).bind(this,led)
+        ).always((function( led ) { if(led == 4) setTimeout('poll_color()', 1000); }).bind(this,led));
+    }
+}
+
+function init_rooms() {
+    $('#sides').buttonset();
 }
 
 $(function() {
     poll_color();
+    init_rooms();
 });
 </script>
-</body>
-</html>
+{% endblock %}

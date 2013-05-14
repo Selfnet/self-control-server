@@ -90,8 +90,11 @@ class Sender():
         var = {}
         var['response'] = "timeout"
         def callback(container):
-            var['response'] = container
-            callbackEvent.set()
+            if container.leds == led:
+                var['response'] = container
+                callbackEvent.set()
+            else:
+                self._connManager.regGetColorCallback(callback)
         self._connManager.regGetColorCallback(callback)
         self._connManager.sendContainer(cont)
         callbackEvent.wait(timeout=5)
