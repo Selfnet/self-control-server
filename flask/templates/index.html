@@ -2,6 +2,55 @@
 
 {% block content %}
     <div class="roomwrapper">
+        <div id="U5" class="roomlight">
+            <div class="room">
+                <h1>U5</h2>
+                <div style="padding-bottom:10px; border:1px solid black">
+                    <h5>Lights at corridor:</h5>
+                    <div id="lights51" class="buttonset">
+                        <input type="radio" id="lights51_on" name="lights51" href="/U5/light/set/1/1/" class="lightswitch" /><label for="lights51_on">On</label>
+                        <input type="radio" id="lights51_off" name="lights51" href="/U5/light/set/1/0/" class="lightswitch" /><label for="lights51_off">Off</label>
+                    </div>
+                </div>
+                <div style="padding-bottom:10px; border:1px solid black">
+                    <h5>Lights at window:</h5>
+                    <div id="lights52" class="buttonset">
+                        <input type="radio" id="lights52_on" name="lights52" href="/U5/light/set/2/1/" class="lightswitch" /><label for="lights52_on">On</label>
+                        <input type="radio" id="lights52_off" name="lights52" href="/U5/light/set/2/0/" class="lightswitch" /><label for="lights52_off">Off</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="roomwrapper">
+        <div id="U4" class="roomlight">
+            <div class="room">
+                <h1>U4</h2>
+                <div style="padding-bottom:10px; border:1px solid black">
+                    <h5>Lights:</h5>
+                    <div id="lights41" class="buttonset">
+                        <input type="radio" id="lights41_on" name="lights41" href="/U4/light/set/1/1/" class="lightswitch" /><label for="lights41_on">On</label>
+                        <input type="radio" id="lights41_off" name="lights41" href="/U4/light/set/1/0/" class="lightswitch" /><label for="lights41_off">Off</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="roomwrapper">
+        <div id="U3" class="roomlight">
+            <div class="room">
+                <h1>U3</h2>
+                <div style="padding-bottom:10px; border:1px solid black">
+                    <h5>Lights:</h5>
+                    <div id="lights31" class="buttonset">
+                        <input type="radio" id="lights31_on" name="lights31" href="/U3/light/set/1/1/" class="lightswitch" /><label for="lights31_on">On</label>
+                        <input type="radio" id="lights31_off" name="lights31" href="/U3/light/set/1/0/" class="lightswitch" /><label for="lights31_off">Off</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="roomwrapper">
         <div id="U2" class="roomlight">
             <div class="room">
                 <h1>U2</h2>
@@ -10,11 +59,25 @@
                 </div>
                 <div style="margin-top:20px; padding-bottom:10px; border:1px solid black">
                     <h5>Sides to set:</h5>
-                    <div id="sides">
+                    <div id="sides" class="buttonset">
                         <input type="checkbox" id="left" checked /><label for="left">left</label>
                         <input type="checkbox" id="top" checked /><label for="top">top</label>
                         <input type="checkbox" id="bottom" checked /><label for="bottom">bottom</label>
                         <input type="checkbox" id="right" checked /><label for="right">right</label>
+                    </div>
+                </div>
+                <div style="padding-bottom:10px; border:1px solid black">
+                    <h5>Cold lights:</h5>
+                    <div id="warmlights" class="buttonset">
+                        <input type="radio" id="warmlights_on" name="warmlights" href="/U2/light/set/1/1/" class="lightswitch" /><label for="warmlights_on">On</label>
+                        <input type="radio" id="warmlights_off" name="warmlights" href="/U2/light/set/1/0/" class="lightswitch" /><label for="warmlights_off">Off</label>
+                    </div>
+                </div>
+                <div style="padding-bottom:10px; border:1px solid black">
+                    <h5>Even colder lights:</h5>
+                    <div id="coldlights" class="buttonset">
+                        <input type="radio" id="coldlights_on" name="coldlights" href="/U2/light/set/2/1/" class="lightswitch" /><label for="coldlights_on">On</label>
+                        <input type="radio" id="coldlights_off" name="coldlights" href="/U2/light/set/2/0/" class="lightswitch" /><label for="coldlights_off">Off</label>
                     </div>
                 </div>
             </div>
@@ -89,7 +152,14 @@ function poll_color() {
 }
 
 function init_rooms() {
-    $('#sides').buttonset();
+    $('.buttonset').buttonset();
+    $('.lightswitch').click(
+        function (event) {
+            $.ajax({
+                url: $(this).attr('href')
+            });
+        }
+    );
 }
 
 $(function() {

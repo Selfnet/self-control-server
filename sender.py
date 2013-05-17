@@ -5,6 +5,9 @@ import protocol
 import construct
 from canbus import CANProtocol
 
+def p(x): return struct.pack('B',x)
+
+
 #commandstructure: command + led + args
 #normally bytes.
 #time is always 2 byte (short) in milliseconds (big endian, 0-65535)
@@ -233,7 +236,24 @@ class Sender():
         self.setColorRGB(self.LEDALL,0,0,0)
         self.setColorRGB(self.LED1,r,g,b)
         self.cycle(millis)
-        
+
+
+    def switchLight(self, room, light, on=True):
+        """Turn light On and Off"""
+        # remapping - can be removed in next release
+        if room == 3:
+            room = 4
+            light = 2
+        elif room == 4:
+            room = 3
+        elif room == 5 and light == 2:
+            room = 3
+        elif room == 5 and light == 1:
+            room = 4
+        elif room == 2:
+            room = 5
+        self._connManager.send( p(0x15)+    p(0x00)+p(0xD0)+p(0xFF)+p(0x21)    + p(0x8) + p(room)+p(light)+p(on) );
+
     def ping(self,times=4,timeout=4,receiver='ADDR_LED',numPongs=1):
         """Ping the CAN-Nodes"""
         pingContainer = construct.Container(
@@ -306,6 +326,7 @@ class Sender():
         logging.debug('Received stop...')
         self._connManager.stop()
         self._connManager.join()
+
 
 class ConnectionManager(threading.Thread):
     def __init__(self,  host, port):
@@ -459,7 +480,7 @@ class ConnectionManager(threading.Thread):
             self.sendLock.acquire()
             if log:
                 logging.debug("sendLock acquired")
-                logging.info("sending unicode %s"%msg)
+                logging.info("sending unicode \t%s"%msg)
             hexmsg = ''
             binmsg = ''
             for c in msg:
@@ -509,7 +530,7 @@ def main():
     logging.basicConfig(level=logging.DEBUG,
                         format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
                         datefmt='%d.%m.%y %H:%M:%s',
-                        filename='sender.log',
+#                        filename='sender.log',
                         filemode='a')
     #logging.critical("Critical")
     #logging.error("Error")

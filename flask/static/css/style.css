@@ -8,9 +8,14 @@ body {
 
 .roomwrapper {
     border: 1px black solid;
-    margin: 50px;
+    margin: 30px;
     padding: 0px;
-    width: 400px;
+    width: 350px;
+    float: left;
+}
+
+.roomwrapper:after {
+    clear: both;
 }
 
 .roomlight {
@@ -23,6 +28,6 @@ body {
     text-align: center;
     height: 500px;
     margin: 0px;
-    padding: 50px;
+    padding: 10px;
     border: 1px black solid;
 }
