@@ -15,6 +15,28 @@ class PrintContext(Construct):
         print context
         print "/" + self.name + '\n'
 
+def can_proto_enum_macro(name):
+    return Enum(
+        Byte(name),
+        PING = 0x08,
+        PONG = 0x09,
+        SYNC = 0x0A,
+        TEXT = 0x10,
+        AC = 0xA0,
+        LED = 0xC0,
+        LIGHT = 0xD0,
+        _default_ = 'UNKNOWN'
+    )
+
+def can_address_enum_macro(name):
+    return Enum(
+        Byte(name),
+        ADDR_GW = 0x21,
+        ADDR_LED = 0x40,
+        ADDR_LIGHT = 0x80,
+        ADDR_BC = 0xFF,
+        _default_ = 'UNKNOWN'
+    )
 
 can_proto_ping = Struct('can_proto_ping',
     Range(0,8,UBInt8('data'))
@@ -35,6 +57,16 @@ can_proto_sync = Struct('can_proto_sync',
         ON = 0x01,
         TOGGLE = 0x02,
     ),
+)
+
+can_proto_light = Struct('can_proto_light',
+    Byte('lights'),
+    Enum(Byte('status'),
+        OFF = 0,
+        ON = 1,
+        TOGGLE = 8,
+        _default_ = 'UNKNOWN'
+    )
 )
 
 can_proto_acstate = Struct('can_proto_acstate',
@@ -157,21 +189,14 @@ can_msg_data = Struct('can_msg_data',
             'SYNC': Embed(can_proto_sync),
             'LED':  Embed(can_proto_led),
             'TEXT': Embed(can_proto_text),
+            'LIGHT': Embed(can_proto_light),
             'UNKNOWN': Embed(can_proto_generic)
         }
     ),
 )
 
 can_msg_data_pre = Struct('can_msg_data_pre',
-    Enum(Byte('protocol'),
-        PING = 0x08,
-        PONG = 0x09,
-        SYNC = 0x0A,
-        AC = 0xA0,
-        LED = 0xC0,
-        TEXT = 0xD0,
-        _default_ = 'UNKNOWN'
-    ),
+    can_proto_enum_macro('protocol'),
     can_msg_data
 )
 
@@ -214,26 +239,9 @@ can_msg = Struct('can_message',
             _default_ = 'UNKNOWN',
         ),
     ),),
-    Enum(Byte('protocol'),
-        PING = 0x08,
-        PONG = 0x09,
-        SYNC = 0x0A,
-        AC = 0xA0,
-        LED = 0xC0,
-        TEXT = 0xD0,
-        _default_ = 'UNKNOWN',
-    ),
-    Enum(Byte('receiver'),
-        ADDR_GW = 0x21,
-        ADDR_LED = 64,
-        ADDR_BC = 255,
-        _default_ = 'UNKNOWN',
-    ),
-    Enum(Byte('sender'),
-        ADDR_GW = 0x21,
-        ADDR_LED = 64,
-        _default_ = 'UNKNOWN',
-    ),
+    can_proto_enum_macro('protocol'),
+    can_address_enum_macro('receiver'),
+    can_address_enum_macro('sender'),
     can_msg_data_adapter
 )
 
@@ -310,7 +318,7 @@ def main():
     )
     can_msg_data_container = Container(
         data = [1,2,3,4]
-    )    
+    )
     gw_msg_can = Container(
         frametype = 'CAN_MSG',
         priority = 'REGULAR',
@@ -320,8 +328,22 @@ def main():
         receiver = 'ADDR_BC',
         can_msg_data = can_msg_data_container
     )
+    can_msg_data_container_light = Container(
+        lights = 0b10101010,
+        status = 'TOGGLE'
+    )
+    gw_msg_can_light = Container(
+        frametype = 'CAN_MSG',
+        priority = 'REGULAR',
+        subnet = 'NOC',
+        protocol = 'LIGHT',
+        sender = 'ADDR_GW',
+        receiver = 'ADDR_LIGHT',
+        can_msg_data = can_msg_data_container_light
+    )
 
     can_string = gw_msg.build(gw_msg_can)
+    can_string_light = gw_msg.build(gw_msg_can_light)
     ascii_string = gw_msg.build(gw_msg_ascii)
     ping_string = gw_msg.build(gw_msg_ping)
 
@@ -329,8 +351,9 @@ def main():
     print 'ping (len \\x%02x): ' %len(ping_string) + gotohex(ping_string)
     print 'ascii(len \\x%02x): ' %len(ascii_string) + gotohex(ascii_string)
     print 'can  (len \\x%02x): ' %len(can_string) + gotohex(can_string)
+    print 'canlight  (len \\x%02x): ' %len(can_string_light) + gotohex(can_string_light)
 
-    gw_msgs = [gw_msg_ping,gw_msg_ascii,gw_msg_can]
+    gw_msgs = [gw_msg_ping,gw_msg_ascii,gw_msg_can,gw_msg_can_light]
     send_string = PacketHandler().build(gw_msgs)
     print '\n\nSend-String for Ethernet (ping,ascii,can):\n'
     print gotohex(send_string)
