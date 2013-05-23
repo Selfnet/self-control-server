@@ -25,7 +25,7 @@ COMMANDS = {
 }
 
 class Sender():
-    def __init__(self, host='10.43.100.111', port=23):
+    def __init__(self, host='10.43.100.112', port=23):
         self.LED1 = 0b0001
         self.LED2 = 0b0010
         self.LED3 = 0b0100
@@ -37,13 +37,26 @@ class Sender():
         self._connManager.start()
         self.protocolArne = CANProtocol()
         time.sleep(0.5)
+        
         self.baseContainer = construct.Container(
                     frametype = 'CAN_MSG',
                     priority = 'REGULAR',
                     subnet = 'ZERO',
-                    protocol = 'LED',
-                    receiver = 'ADDR_LED',
-                    sender = 'ADDR_GW'
+                    sender = 'ADDR_GW0'
+        )
+        self.ledBaseContainer = self.baseContainer
+        self.ledBaseContainer.update(
+            construct.Container(
+                protocol = 'LED',
+                receiver = 'ADDR_LED'
+            )
+        )
+        self.lightBaseContainer = self.baseContainer
+        self.lightBaseContainer.update(
+            construct.Container(
+                protocol = 'LIGHT',
+                receiver = 'ADDR_LIGHT'
+            )
         )
 
     def sendMessage(self,container):
@@ -252,7 +265,16 @@ class Sender():
             room = 4
         elif room == 2:
             room = 5
-        self._connManager.send( p(0x15)+    p(0x00)+p(0xD0)+p(0xFF)+p(0x21)    + p(0x8) + p(room)+p(light)+p(on) );
+        data_container = construct.Container(
+            lights = 0b11111111,
+            status = 'ON' if on else 'OFF'
+        )
+        cont = self.lightBaseContainer
+        cont.update(construct.Container(
+                can_msg_data = data_container
+            )
+        )
+        self._connManager.sendContainer(cont)
 
     def ping(self,times=4,timeout=4,receiver='ADDR_LED',numPongs=1):
         """Ping the CAN-Nodes"""
@@ -315,11 +337,6 @@ class Sender():
 #                    change[i] = random.randrange(minchange, maxchange)
 #            self.setColorRGB(col[0],col[1],col[2])
 #            time.sleep(sleep)
-
-#    def light(self, state, lightnr=1):
-#        """Set lightnr (1 = cold bright light) to given state: 0 (off) or 1 (on)"""
-#        state = state + 1
-#        self._connManager.send(COMMANDS['light'] + struct.pack('B', lightnr) + struct.pack('B', state))
 
     def stop(self):
         """Stop the Sender. Close all networkconnections and stop."""

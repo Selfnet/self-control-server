@@ -31,7 +31,8 @@ def can_proto_enum_macro(name):
 def can_address_enum_macro(name):
     return Enum(
         Byte(name),
-        ADDR_GW = 0x21,
+        ADDR_GW0 = 0x20,
+        ADDR_GW1 = 0x21,
         ADDR_LED = 0x40,
         ADDR_LIGHT = 0x80,
         ADDR_BC = 0xFF,
