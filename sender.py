@@ -597,11 +597,9 @@ def main():
     #end fancy startup shit
     #######################
 
-    global s
-    s = Sender()
+    __builtins__.s = Sender()
     
-    global logManager
-    logManager = LogManager()
+    __builtins__.logManager = LogManager()
     
     try:
         import senderrc
