@@ -612,8 +612,11 @@ def main():
             'def main():',
             '    print "\\n\\n\\n################################\\n"',
             '    print "senderrc.main() executed. Insert your startup code in senderrc.py"',
-            '    #TODO Insert your startup code here',
             '    print "\\n################################\\n\\n\\n"',
+            '    #TODO Insert your startup code here',
+            '    ',
+            '    #uncomment following line to enable debug-logging on console',
+            '    #logManager.setLogLevels(logging.DEBUG)',
         ]
         open("senderrc.py", 'w+').write('\n'.join(dummylines))
         print "dummyfile senderrc.py created. Insert your startup code in senderrc.py"
