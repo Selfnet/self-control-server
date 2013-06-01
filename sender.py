@@ -93,7 +93,7 @@ class Sender():
 
     def getColorRGB(self, led):
         """Get current color of given LED from Node"""
-        cont = self.baseContainer
+        cont = self.ledBaseContainer
         cont.update(construct.Container(
                 mode = 'GETCOLOR',
                 length = 2,
@@ -123,7 +123,7 @@ class Sender():
     def setColorRGB(self, led, r, g, b):
         """Set permanent RGB color for LED to given RGB (0-255)."""
         logging.info("setting RGB color of led %d %03d|%03d|%03d"%(led,r,g,b))
-        cont = self.baseContainer
+        cont = self.ledBaseContainer
         cont.update(construct.Container(
                 mode = 'COLOR',
                 length = 7,
@@ -209,7 +209,7 @@ class Sender():
         factor: time/factor = time on in one cycle
         r, g, b: color
         """
-        cont = self.baseContainer
+        cont = self.ledBaseContainer
         cont.update(construct.Container(
                 mode = 'STROBE',
                 length = 8,
@@ -316,27 +316,6 @@ class Sender():
         while True:
             self.setColorRGB(s.LEDALL,r=random.randint(0,255), g=random.randint(0,255), b=random.randint(0,255))
             time.sleep(1)
-
-#    def fadeSoftRandom(self,sleep=0.1,minchange=1,maxchange=7):
-#        """Start automatic fading mode. Fade in software, much networktraffic - don't use. Interrupt with Ctrl+C
-#        
-#        params:
-#        sleep: waiting time between 2 fadingsteps in seconds
-#        minchange: minimum stepsize
-#        maxchange: maximum stepsize"""
-#        col = [random.randrange(0,255), random.randrange(0,255), random.randrange(0,255)]
-#        change = [random.randrange(minchange, maxchange), random.randrange(minchange, maxchange), random.randrange(minchange, maxchange)]
-#        while True:
-#            for i in range(0,3):
-#                col[i] += change[i]
-#                if col[i] > 254:
-#                    col[i] = 254
-#                    change[i] = random.randrange(minchange, maxchange)*-1
-#                elif col[i] < 0:
-#                    col[i] = 0
-#                    change[i] = random.randrange(minchange, maxchange)
-#            self.setColorRGB(col[0],col[1],col[2])
-#            time.sleep(sleep)
 
     def stop(self):
         """Stop the Sender. Close all networkconnections and stop."""
