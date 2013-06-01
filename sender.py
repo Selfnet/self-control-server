@@ -26,6 +26,7 @@ COMMANDS = {
 
 class Sender():
     def __init__(self, host='10.43.100.112', port=23):
+        self.logger = logging.getLogger('sender')
         self.LED1 = 0b0001
         self.LED2 = 0b0010
         self.LED3 = 0b0100
@@ -66,13 +67,13 @@ class Sender():
         try:
             payload = protocol.gw_msg.build(container)
         except Exception,e:
-            logging.warn('Exception when building container: %s'%str(e))
+            self.logger.warn('Exception when building container: %s'%str(e))
             ret = 1
 
         hexdump = Helper.hexdump(payload)
         bindump = Helper.bindump(payload)
         
-        logging.debug('Attempting to send container\n%s\n' % str(container)\
+        self.logger.debug('Attempting to send container\n%s\n' % str(container)\
                         +'Hex content: %s\n' % hexdump\
                         + 'Binary content: %s' % bindump)
         self._connManager.send(payload)
@@ -82,13 +83,13 @@ class Sender():
         
     def setMaster(self, led, master):
         """Set master for LED"""
-        logging.info("setting master for led %d to %d"%(led,master))
+        self.logger.info("setting master for led %d to %d"%(led,master))
         self._connManager.send(self.protocolArne.setMaster(master, led=led))
         #self._connManager.send(COMMANDS['setMaster'] + struct.pack('B', led) + struct.pack('B', master))
         
     def setAllMaster(self, master):
         """Set master for LED"""
-        logging.info("setting master for all leds to %d"%(master))
+        self.logger.info("setting master for all leds to %d"%(master))
         self._connManager.send(self.protocolArne.setMaster(master))
 
     def getColorRGB(self, led):
@@ -122,7 +123,7 @@ class Sender():
 
     def setColorRGB(self, led, r, g, b):
         """Set permanent RGB color for LED to given RGB (0-255)."""
-        logging.info("setting RGB color of led %d %03d|%03d|%03d"%(led,r,g,b))
+        self.logger.info("setting RGB color of led %d %03d|%03d|%03d"%(led,r,g,b))
         cont = self.ledBaseContainer
         cont.update(construct.Container(
                 mode = 'COLOR',
@@ -141,12 +142,12 @@ class Sender():
 
     def setColorHSV(self, led, h, s, v):
         """Set permanent HSV color for LED to given HSV (H: 0-359, S+V: 0-255)."""
-        logging.info("setting HSV color of led %d %03d|%03d|%03d"%(led,h,s,v))
+        self.logger.info("setting HSV color of led %d %03d|%03d|%03d"%(led,h,s,v))
         self._connManager.send(COMMANDS['setColorHSV'] + struct.pack('B', led) + struct.pack('>H', h) + struct.pack('B', s) + struct.pack('B', v))
 
     def fadeToColor(self, led, millis, r, g, b):
         """Fade LED to given RGB (0-255) in given time (0-65535)."""
-        logging.info("fade to color %03d|%03d|%03d in %.3f seconds"%(r,g,b,millis/1000.0))
+        self.logger.info("fade to color %03d|%03d|%03d in %.3f seconds"%(r,g,b,millis/1000.0))
         self._connManager.send(COMMANDS['fadeToColor'] + struct.pack('B', led) + struct.pack('>H', millis) + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
 
     def white(self):
@@ -319,7 +320,7 @@ class Sender():
 
     def stop(self):
         """Stop the Sender. Close all networkconnections and stop."""
-        logging.debug('Received stop...')
+        self.logger.debug('Received stop...')
         self._connManager.stop()
         self._connManager.join()
 
@@ -327,6 +328,7 @@ class Sender():
 class ConnectionManager(threading.Thread):
     def __init__(self,  host, port):
         super(ConnectionManager, self).__init__()
+        self.logger = logging.getLogger('sender')
         self.host = host
         self.port = port
         self.connected = False
@@ -351,7 +353,7 @@ class ConnectionManager(threading.Thread):
     
     def run(self):
         print 'ConnectionManager started. Trying to connect...'
-        logging.info('ConnectionManager started. Trying to connect...')
+        self.logger.info('ConnectionManager started. Trying to connect...')
         while not self.stopped:
             if not self.connected:
                 self.tryconnect()
@@ -363,10 +365,10 @@ class ConnectionManager(threading.Thread):
                     received = self.sock.recv(4096)
                     if not self.stopped:
                         if received:
-                            logging.debug("received unicode: %s"%str(received))
-                            logging.debug("received hex: %s"%Helper.hexdump(received))
+                            self.logger.debug("received unicode: %s"%str(received))
+                            self.logger.debug("received hex: %s"%Helper.hexdump(received))
                             for container in protocol.PacketHandler().parse(received):
-                                logging.debug('Received container %s'%str(container))
+                                self.logger.debug('Received container %s'%str(container))
                                 try:
                                     if container['frametype'] == 'CAN_MSG':
                                         if container['protocol'] == 'PONG':
@@ -379,25 +381,25 @@ class ConnectionManager(threading.Thread):
                                                     cb = self.getColorCallbacks.pop()
                                                     cb(container)
                                 except Exception, e:
-                                    logging.debug('exception when interpreting container: %s'%str(e))
-                                    logging.exception(e)
+                                    self.logger.debug('exception when interpreting container: %s'%str(e))
+                                    self.logger.exception(e)
                         else:
                             self.connectionReset()
                 except socket.timeout, e:
                     pass
                 except Exception, e:
-                    logging.debug('in statechecker exception: %s'%str(e))
-                    logging.exception(e)
+                    self.logger.debug('in statechecker exception: %s'%str(e))
+                    self.logger.exception(e)
                     self.connectionReset()
-        logging.info('Closing connection...')
+        self.logger.info('Closing connection...')
         try:
             self.stop()
         except Exception, e:
             pass
-        logging.info('Connection closed, ConnectionManager stopped')
+        self.logger.info('Connection closed, ConnectionManager stopped')
     
     def connectionReset(self):
-        logging.debug("connection reset")
+        self.logger.debug("connection reset")
         print "Connection lost. Reconnecting..."
         self.sendLock.acquire(False)
         self.sendLock.release()
@@ -420,7 +422,7 @@ class ConnectionManager(threading.Thread):
         self.sock.settimeout(1)
         self.sock.connect((self.host, self.port))
         self.connected = True
-        logging.debug("connection established")
+        self.logger.debug("connection established")
         print "Connected to %s:%d"%(self.host,self.port)
         self.sendLock.release()
     
@@ -431,7 +433,7 @@ class ConnectionManager(threading.Thread):
     def disconnect(self):
         self.sendLock.acquire(False)
         self.sock.close()
-        logging.debug("disconnect")
+        self.logger.debug("disconnect")
         self.connected = False
     
     def tryconnect(self):
@@ -440,17 +442,17 @@ class ConnectionManager(threading.Thread):
             self.disconnect()
         except:
             pass
-        logging.debug("Trying to connect...")
+        self.logger.debug("Trying to connect...")
         while not self.connected and not self.stopped:
             try:
                 self.connect()
-                logging.info("Connected to %s:%d"%(self.host,self.port))
+                self.logger.info("Connected to %s:%d"%(self.host,self.port))
             except socket.timeout:
                 pass
             except Exception, e:
-                logging.info(e)
+                self.logger.info(e)
                 time.sleep(0.1)
-                logging.debug("Trying to connect...")
+                self.logger.debug("Trying to connect...")
                 
     def sendContainer(self,container,log=True):
         ret = 0
@@ -459,42 +461,42 @@ class ConnectionManager(threading.Thread):
         try:
             payload = protocol.gw_msg.build(container)
         except Exception,e:
-            logging.error('Exception when building container: %s'%str(e))
-            logging.exception(e)
+            self.logger.error('Exception when building container: %s'%str(e))
+            self.logger.exception(e)
             ret = 1
 
         #hexdump = Helper.hexdump(payload)
         #bindump = Helper.bindump(payload)
         if log:
-            logging.debug('Sending container\n%s\n' % str(container))
+            self.logger.debug('Sending container\n%s\n' % str(container))
         self.send(payload, log)
 
     def send(self, msg, log=True):
         if self.connected:
             if log:
-                logging.debug("waiting for sendLock...")
+                self.logger.debug("waiting for sendLock...")
             self.sendLock.acquire()
             if log:
-                logging.debug("sendLock acquired")
-                logging.info("sending unicode \t%s"%msg)
+                self.logger.debug("sendLock acquired")
+                self.logger.info("sending unicode \t%s"%msg)
             hexmsg = ''
             binmsg = ''
             for c in msg:
                 binmsg += Helper.format8bit(bin(struct.unpack('B',c)[0])) + ' '
                 hexmsg += hex(struct.unpack('B',c)[0]) + ' '
             if log:
-                logging.info("sending binary %s"%binmsg)
-                logging.info("sending hex %s"%Helper.hexdump(msg))
+                self.logger.info("sending binary %s"%binmsg)
+                self.logger.info("sending hex %s"%Helper.hexdump(msg))
             try:
                 self.sock.sendall(msg)
             except Exception, e:
-                logging.warn('Exception when sending: %s'%str(e))
+                self.logger.warn('Exception when sending: %s'%str(e))
                 print "Connection error. Reconnecting..."
                 self.sendLock.release()
                 self.connectionReset()
             self.sendLock.release()
         else:
-            logging.warn("Not sent. Socket not connected")
+            self.logger.warn("Not sent. Socket not connected")
 
 class Helper:
     @staticmethod
@@ -521,22 +523,47 @@ class Helper:
         binstring = [oct2bin[int(n)] for n in oct(x)] 
         return ''.join(binstring).lstrip('0').zfill(digits)
 
-def main():
-    # set up logging to file - see previous section for more details
-    logging.basicConfig(level=logging.DEBUG,
-                        format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
-                        datefmt='%d.%m.%y %H:%M:%s',
-#                        filename='sender.log',
-                        filemode='a')
-    #logging.critical("Critical")
-    #logging.error("Error")
-    #logging.warning("Warning")
-    #logging.info("Info")
-    #logging.debug("Debug")
-    
-    global s
-    s = Sender()
 
+
+
+def testLogging():
+    logger = logging.getLogger('sender')
+    logger.critical("Critical")
+    logger.error("Error")
+    logger.warning("Warning")
+    logger.info("Info")
+    logger.debug("Debug")
+
+class LogManager():
+    def __init__(self, filename="sender.log"):
+        self.fileFormatter = logging.Formatter(
+            fmt='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
+            datefmt='%d.%m.%y %H:%M:%s'
+        )
+        self.consoleFormatter = logging.Formatter(
+            fmt='%(name)-12s %(levelname)-8s %(message)s',
+            datefmt='%d.%m.%y %H:%M:%s'
+        )
+        
+        #create RotatingFileHandler (rotates at 25MB)
+        from logging.handlers import RotatingFileHandler
+        self.fileHandler = RotatingFileHandler(filename=filename,maxBytes=26214400,backupCount=1)
+        self.fileHandler.setFormatter(self.fileFormatter)
+        
+        self.consoleHandler = logging.StreamHandler()
+        self.consoleHandler.setFormatter(self.consoleFormatter)
+        
+        self.setLogLevels()
+        
+        logger = logging.getLogger('sender')
+        logger.addHandler(self.fileHandler)
+        logger.addHandler(self.consoleHandler)
+    
+    def setLogLevels(self, consoleLevel=logging.CRITICAL, fileLevel = logging.DEBUG ):
+        self.fileHandler.setLevel(fileLevel)
+        self.consoleHandler.setLevel(consoleLevel)
+
+def main():
     #######################
     #fancy startup shit (history, tabcompletion & Co)
     #######################
@@ -570,8 +597,42 @@ def main():
     #end fancy startup shit
     #######################
 
+    global s
+    s = Sender()
+    
+    global logManager
+    logManager = LogManager()
+    
+    try:
+        import senderrc
+        senderrc.main()
+    except ImportError:
+        print '\n\n\n################################\n'
+        print "Can't find senderrc. Content of def senderrc.main() will always be executed on startup"
+        print "creating dummyfile..."
+        dummylines = [
+            'def main():',
+            '    print "\\n\\n\\n################################\\n"',
+            '    print "senderrc.main() executed. Insert your startup code in senderrc.py"',
+            '    #TODO Insert your startup code here',
+            '    print "\\n################################\\n\\n\\n"',
+        ]
+        open("senderrc.py", 'w+').write('\n'.join(dummylines))
+        print "dummyfile senderrc.py created. Insert your startup code in senderrc.py"
+        print '\n################################\n\n\n'
+    except Exception, e:
+        print '\n\n\n################################'
+        print '###### Exception in senderrc.py:\n\n'
+        import traceback
+        traceback.print_exc(e)
+        print '\n\n\nExiting...'
+        import sys
+        sys.exit(1)
+
     import code
-    code.InteractiveConsole(locals=globals()).interact("s is your Sender! try 's.police()'")
+    code.InteractiveConsole(locals=globals()).interact(
+        "s is your Sender! try 's.setColorRGB(s.LEDALL, 255, 0, 0)'. Exit with Ctrl-D or type 'exit()'"
+    )
     print "Stopping network daemon..."
     s.stop()
     print "Stopped. Exiting..."
