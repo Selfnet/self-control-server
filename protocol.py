@@ -15,30 +15,6 @@ class PrintContext(Construct):
         print context
         print "/" + self.name + '\n'
 
-def can_proto_enum_macro(name):
-    return Enum(
-        Byte(name),
-        PING = 0x08,
-        PONG = 0x09,
-        SYNC = 0x0A,
-        TEXT = 0x10,
-        AC = 0xA0,
-        LED = 0xC0,
-        LIGHT = 0xD0,
-        _default_ = 'UNKNOWN'
-    )
-
-def can_address_enum_macro(name):
-    return Enum(
-        Byte(name),
-        ADDR_GW0 = 0x20,
-        ADDR_GW1 = 0x21,
-        ADDR_LED = 0x40,
-        ADDR_LIGHT = 0x80,
-        ADDR_BC = 0xFF,
-        _default_ = 'UNKNOWN'
-    )
-
 can_proto_ping = Struct('can_proto_ping',
     Range(0,8,UBInt8('data'))
 )
@@ -99,21 +75,21 @@ can_proto_acstate = Struct('can_proto_acstate',
     ),
 )
 
-def build_mode(varname):
-    return Enum(Byte(varname),
-        MASTER = 0x01,
-        COLOR = 0x02,
-        FADE = 0x03,
-        RANDOM = 0x04,
-        AUTO = 0x05,
-        STROBE = 0x06,
-        CYCLE = 0x07,
-        FADEMASTER = 0x08,
-        POLICE = 0x09,
-        GETCOLORRESPONSE = 0xFE,
-        GETCOLOR = 0xFF,
-        _default_ = 'AUTO',
-    )
+
+can_proto_led_modes = {
+    'MASTER' : 0x01,
+    'COLOR' : 0x02,
+    'FADE' : 0x03,
+    'RANDOM' : 0x04,
+    'AUTO' : 0x05,
+    'STROBE' : 0x06,
+    'CYCLE' : 0x07,
+    'FADEMASTER' : 0x08,
+    'POLICE' : 0x09,
+    'GETCOLORRESPONSE' : 0xFE,
+    'GETCOLOR' : 0xFF,
+    '_default_' : 'AUTO'
+    }
 
 can_proto_led = Struct('can_proto_led',
     Embed(BitStruct('details',
@@ -126,7 +102,7 @@ can_proto_led = Struct('can_proto_led',
         BitField('leds',4)
         ),
     ),
-    build_mode('mode'),
+    Enum(Byte('mode'),**can_proto_led_modes),
     Switch('modeselect', lambda ctx: ctx['mode'], {
         'MASTER': Embed(Struct('led',ULInt8('led'))),
         'COLOR': Embed( Struct('params',
@@ -168,7 +144,7 @@ can_proto_led = Struct('can_proto_led',
                  ),),
 
         'GETCOLORRESPONSE': Embed( Struct('params',
-                        build_mode('ledmode'),
+                        Enum(Byte('led_mode'),**can_proto_led_modes),
                         ULInt8('color1'),
                         ULInt8('color2'),
                         ULInt8('color3'),
@@ -182,22 +158,41 @@ can_proto_generic = Struct('can_proto_generic',
     Range(0,8,UBInt8('data'))
 )
 
+can_node_addr_defs = [
+    ['ADDR_GW0', 0x20],
+    ['ADDR_GW1', 0x21],
+    ['ADDR_LED', 0x40],
+    ['ADDR_LIGHT', 0x80],
+    ['ADDR_BC', 0xFF],
+    ['_default_', 'UNKNOWN']
+    ]
+
+can_protocol_defs = [
+    [can_proto_ping,'PING',0x08],
+    [can_proto_pong,'PONG',0x09],
+    [can_proto_text,'TEXT',0x10],
+    [can_proto_sync,'SYNC',0x0A],
+    [can_proto_acstate, 'ACSTATE', 0xA0],
+    [can_proto_led,'LED',0xC0],
+    [can_proto_light,'LIGHT',0xD0],
+    [can_proto_generic,'UNKNOWN',None]
+    ]
+
+can_node_addr_enum = dict((key,address) for (key,address) in can_node_addr_defs)
+
+can_protocol_enum = dict((key,address) for (value,key,address) in can_protocol_defs)
+del can_protocol_enum['UNKNOWN']
+can_protocol_enum.update({'_default_' : 'UNKNOWN'})
+
+can_protocol_embeds = dict((key,Embed(value)) for (value,key,address) in can_protocol_defs)
+
 can_msg_data = Struct('can_msg_data',
     ULInt8('data_length'),
-    Switch('data', lambda ctx: ctx._.protocol,{
-            'PING': Embed(can_proto_ping),
-            'PONG': Embed(can_proto_pong),
-            'SYNC': Embed(can_proto_sync),
-            'LED':  Embed(can_proto_led),
-            'TEXT': Embed(can_proto_text),
-            'LIGHT': Embed(can_proto_light),
-            'UNKNOWN': Embed(can_proto_generic)
-        }
-    ),
+    Switch('data', lambda ctx: ctx._.protocol,can_protocol_embeds)
 )
 
 can_msg_data_pre = Struct('can_msg_data_pre',
-    can_proto_enum_macro('protocol'),
+    Enum(Byte('protocol'),**can_protocol_enum),
     can_msg_data
 )
 
@@ -240,9 +235,9 @@ can_msg = Struct('can_message',
             _default_ = 'UNKNOWN',
         ),
     ),),
-    can_proto_enum_macro('protocol'),
-    can_address_enum_macro('receiver'),
-    can_address_enum_macro('sender'),
+    Enum(Byte('protocol'),**can_protocol_enum),
+    Enum(Byte('receiver'),**can_node_addr_enum),
+    Enum(Byte('sender'),**can_node_addr_enum),
     can_msg_data_adapter
 )
 
@@ -270,7 +265,6 @@ gw_msg = Struct('gw_msg',
         default = Pass
     ),
 )
-
 
 ethernet_msg = Struct('msg',
     OptionalGreedyRange(
@@ -325,7 +319,7 @@ def main():
         priority = 'REGULAR',
         subnet = 'NOC',
         protocol = 'PING',
-        sender = 'ADDR_GW',
+        sender = 'ADDR_GW0',
         receiver = 'ADDR_BC',
         can_msg_data = can_msg_data_container
     )
@@ -338,7 +332,7 @@ def main():
         priority = 'REGULAR',
         subnet = 'NOC',
         protocol = 'LIGHT',
-        sender = 'ADDR_GW',
+        sender = 'ADDR_GW0',
         receiver = 'ADDR_LIGHT',
         can_msg_data = can_msg_data_container_light
     )

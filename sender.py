@@ -254,27 +254,27 @@ class Sender():
     def switchLight(self, room, light, on=True):
         """Turn light On and Off"""
         # remapping - can be removed in next release
-        if room == 3:
-            room = 4
-            light = 2
+        if room == 2:
+            if light == 1:
+                lights = 0b00000001
+            elif light == 2:
+                lights = 0b00000010
+        elif room == 3:
+                lights = 0b00000100
         elif room == 4:
-            room = 3
-        elif room == 5 and light == 2:
-            room = 3
-        elif room == 5 and light == 1:
-            room = 4
-        elif room == 2:
-            room = 5
+                lights = 0b00001000
+        elif room == 5:
+            if light == 1:
+                lights = 0b00010000
+            elif light == 2:
+                lights = 0b00100000
         data_container = construct.Container(
-            lights = 0b11111111,
+            lights = lights,
             status = 'ON' if on else 'OFF'
         )
-        cont = self.lightBaseContainer
-        cont.update(construct.Container(
-                can_msg_data = data_container
-            )
-        )
-        self._connManager.sendContainer(cont)
+        #cont = self.lightBaseContainer
+        #cont.update( construct.Container( can_msg_data = data_container ))
+        #self._connManager.sendContainer(cont)
 
     def ping(self,times=4,timeout=4,receiver='ADDR_LED',numPongs=1):
         """Ping the CAN-Nodes"""
