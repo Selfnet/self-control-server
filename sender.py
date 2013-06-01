@@ -7,23 +7,6 @@ from canbus import CANProtocol
 
 def p(x): return struct.pack('B',x)
 
-
-#commandstructure: command + led + args
-#normally bytes.
-#time is always 2 byte (short) in milliseconds (big endian, 0-65535)
-#r, g, b is one byte color (0-255)
-COMMANDS = {
-    'setMaster': struct.pack('B', 101),#struct(code+led+master)
-    'setColorRGB': struct.pack('B', 102),#struct(code+led+r+g+b)
-    'fadeToColor': struct.pack('B', 103),#struct(code+led+time+r+g+b)
-    'randomColor': struct.pack('B', 104),#struct(code+led+time)
-    'randomFading': struct.pack('B', 105),#struct(code+led+time)
-    'strobe': struct.pack('B', 106),#struct(code+led+timeoff+timetotal)
-    'cycle': struct.pack('B', 107),#struct(code+0+time)
-    'cycleFade': struct.pack('B', 108),#struct(code+0+time)
-    'setColorHSV': struct.pack('B', 109),#struct(code+led+h(2byte: 0-360)+s+v)
-}
-
 class Sender():
     def __init__(self, host='10.43.100.112', port=23):
         self.logger = logging.getLogger('sender')
@@ -95,14 +78,14 @@ class Sender():
     def getColorRGB(self, led):
         """Get current color of given LED from Node"""
         cont = self.ledBaseContainer
-        cont.update(construct.Container(
-                mode = 'GETCOLOR',
-                length = 2,
-                leds = led,
-                colormode = 'RGB',
-                time = 10,
-            )
+        data_container = construct.Container(
+            mode = 'GETCOLOR',
+            length = 2,
+            leds = led,
+            colormode = 'RGB',
+            time = 10
         )
+        cont.update( construct.Container( can_msg_data = data_container ))
         callbackEvent = threading.Event()
         var = {}
         var['response'] = "timeout"
@@ -257,25 +240,25 @@ class Sender():
         # remapping - can be removed in next release
         if room == 2:
             if light == 1:
-                lights = 0b00000001
-            elif light == 2:
-                lights = 0b00000010
+                lights = 0b10000000 #u2 kalt
+            else:
+                lights = 0b01000000 #u2 nich so kalt (aka warm)
         elif room == 3:
-                lights = 0b00000100
+                lights = 0b00100000 #u3
         elif room == 4:
-                lights = 0b00001000
+                lights = 0b00000100
         elif room == 5:
             if light == 1:
-                lights = 0b00010000
+                lights = 0b00001000
             elif light == 2:
-                lights = 0b00100000
+                lights = 0b00010000
         data_container = construct.Container(
             lights = lights,
             status = 'ON' if on else 'OFF'
         )
-        #cont = self.lightBaseContainer
-        #cont.update( construct.Container( can_msg_data = data_container ))
-        #self._connManager.sendContainer(cont)
+        cont = self.lightBaseContainer
+        cont.update( construct.Container( can_msg_data = data_container ))
+        self._connManager.sendContainer(cont)
 
     def ping(self,times=4,timeout=4,receiver='ADDR_LED',numPongs=1):
         """Ping the CAN-Nodes"""
@@ -613,9 +596,11 @@ def main():
             '    print "\\n\\n\\n################################\\n"',
             '    print "senderrc.main() executed. Insert your startup code in senderrc.py"',
             '    print "\\n################################\\n\\n\\n"',
+            '    ',
             '    #TODO Insert your startup code here',
             '    ',
-            '    #uncomment following line to enable debug-logging on console',
+            '    ## uncomment following lines to enable debug-logging on console',
+            '    #import logging',
             '    #logManager.setLogLevels(logging.DEBUG)',
         ]
         open("senderrc.py", 'w+').write('\n'.join(dummylines))
@@ -630,6 +615,7 @@ def main():
         import sys
         sys.exit(1)
 
+    #from libs.module_reloading_console import ModuleReloadingConsole
     import code
     code.InteractiveConsole(locals=globals()).interact(
         "s is your Sender! try 's.setColorRGB(s.LEDALL, 255, 0, 0)'. Exit with Ctrl-D or type 'exit()'"
