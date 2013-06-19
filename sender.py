@@ -1,5 +1,5 @@
 import socket, time, random, struct, threading, signal
-import logging
+import logging, copy
 
 import protocol
 import construct
@@ -28,14 +28,16 @@ class Sender():
                     subnet = 'ZERO',
                     sender = 'ADDR_GW0'
         )
-        self.ledBaseContainer = self.baseContainer
+        
+        self.ledBaseContainer = copy.copy(self.baseContainer)
         self.ledBaseContainer.update(
             construct.Container(
                 protocol = 'LED',
                 receiver = 'ADDR_LED'
             )
         )
-        self.lightBaseContainer = self.baseContainer
+        
+        self.lightBaseContainer = copy.copy(self.baseContainer)
         self.lightBaseContainer.update(
             construct.Container(
                 protocol = 'LIGHT',
@@ -77,7 +79,6 @@ class Sender():
 
     def getColorRGB(self, led):
         """Get current color of given LED from Node"""
-        cont = self.ledBaseContainer
         data_container = construct.Container(
             mode = 'GETCOLOR',
             length = 2,
@@ -85,6 +86,7 @@ class Sender():
             colormode = 'RGB',
             time = 10
         )
+        cont = self.ledBaseContainer
         cont.update( construct.Container( can_msg_data = data_container ))
         callbackEvent = threading.Event()
         var = {}
@@ -240,18 +242,18 @@ class Sender():
         # remapping - can be removed in next release
         if room == 2:
             if light == 1:
-                lights = 0b10000000 #u2 kalt
+                lights = 0b01000000 #u2 kalt
             else:
-                lights = 0b01000000 #u2 nich so kalt (aka warm)
+                lights = 0b10000000 #u2 nich so kalt (aka warm)
         elif room == 3:
                 lights = 0b00100000 #u3
         elif room == 4:
-                lights = 0b00000100
+            lights = 0b00000100
         elif room == 5:
             if light == 1:
-                lights = 0b00001000
-            elif light == 2:
                 lights = 0b00010000
+            elif light == 2:
+                lights = 0b00001000
         data_container = construct.Container(
             lights = lights,
             status = 'ON' if on else 'OFF'
@@ -444,6 +446,7 @@ class ConnectionManager(threading.Thread):
         try:
             payload = protocol.gw_msg.build(container)
         except Exception,e:
+            self.logger.error('Cannot build container: %s'%str(container))
             self.logger.error('Exception when building container: %s'%str(e))
             self.logger.exception(e)
             ret = 1
@@ -451,7 +454,8 @@ class ConnectionManager(threading.Thread):
         #hexdump = Helper.hexdump(payload)
         #bindump = Helper.bindump(payload)
         if log:
-            self.logger.debug('Sending container\n%s\n' % str(container))
+            logging.getLogger('sender').debug('Sending container\n%s\n' % str(container))
+            print "test"
         self.send(payload, log)
 
     def send(self, msg, log=True):
