@@ -36,6 +36,61 @@ can_proto_sync = Struct('can_proto_sync',
     ),
 )
 
+can_proto_flash = Struct('can_proto_flash',
+    Enum(UBInt16('data_counter'),
+        COMMAND = 0xFFFF,
+        _default_ = 'DATA'
+    ),
+    Switch('command_select', lambda ctx: ctx['data_counter'], 
+        {
+        'DATA': Embed(Struct('data_struct',Array(6,UBInt8('data')))),
+        'COMMAND': Embed( Struct('flash_struct',
+                Enum(UBInt8('command',
+                    RESET_REQ = 0x00,
+                    RESET_ACK = 0x01,
+                    BOOTLOADER_READY = 0x02,	
+                    BOOTLOADER_ERROR = 0x03,	
+                    FLASH_REQ = 0x04,	
+                    FLASH_ACK = 0x05,
+                    FLASH_DETAILS = 0x06,
+                    FLASH_DETAILS_ACK = 0x07,
+                    BATCH_READY = 0x08,	
+                    BATCH_READY_ACK = 0x09,	
+                    BATCH_COMPLETE = 0x0A,
+                    BATCH_COMPLETE_ACK = 0x0B,
+                    CRC = 0x0C,	
+                    CRC_ACK = 0x0D,
+                    APP_START_REQ = 0x0E,
+                    APP_START_ACK = 0x0F,
+                    _default_ = 'UNKNOWN_COMMAND'
+                )),
+                Switch('command',
+                    {
+                    'FLASH_ACK': Embed(Struct('node_details',
+                        UBInt16('flash_size'),
+                        UBInt16('batch_size'),
+                        UBInt8('bootloader_version')
+                    )),
+                    'FLASH_DETAILS': Embed(Struct('flash_details',
+                        UBInt32('total_bytes'),
+                        UBInt32('total_batches')
+                    )),
+                    'BATCH_READY': UBInt32('frame_number'),
+                    'BATCH_READY_ACK': UBInt32('frame_number'),
+                    'BATCH_COMPLETE': UBInt32('frame_number'),
+                    'BATCH_COMPLETE_ACK': UBInt32('frame_number'),
+                    'CRC': UBInt32('crc'),
+                    'CRC_ACK': UBInt32('crc')  
+                    },
+                    default = Pass 
+                ),
+            ))
+        }
+    )
+)          
+                
+    
+
 can_proto_light = Struct('can_proto_light',
     Byte('lights'),
     Enum(Byte('status'),
