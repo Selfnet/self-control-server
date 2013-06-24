@@ -42,6 +42,8 @@ can_proto_light = Struct('can_proto_light',
         OFF = 0,
         ON = 1,
         TOGGLE = 8,
+        RESPONSE = 0xFE,
+        GET = 0xFF,
         _default_ = 'UNKNOWN'
     )
 )
