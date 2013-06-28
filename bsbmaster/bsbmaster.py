@@ -43,10 +43,102 @@ def mdebug(level, message):
 class CmdException(Exception):
     pass
 
-
-
-
-
+class FlashConnection:
+    def __init__(self, conManager, sender_id, flash_state='INIT'):
+        self.conManager = conManager
+        self.sender_id = sender_id
+        self.flash_state = flash_state
+        
+    def processFrame(self,container)
+        data = container.can_msg_data
+        if data.data_counter == 'COMMAND':
+            command = data.command
+            if command == 'RESET_ACK':
+                self.flash_state = 'NODE_RESET'
+            elif command == 'BOOTLOADER_READY':
+                self.flash_state = 'NODE_READY'
+            elif command == 'BOOTLOADER_ERROR':
+                return 'ERROR'
+            elif command == 'FLASH_ACK' and self.flash_state =='NODE_READY':
+                self.flash_state = 'FLASH_HANDSHAKE'
+                self.sendFlashDetails()
+            elif command == 'FLASH_DETAILS_ACK' and self.flash_state =='FLASH_HANDSHAKE':
+                self.flash_state = 'FLASH_READY'
+                self.initTransfer()
+            elif command == 'BATCH_READY_ACK' and
+                    ( self.flash_state =='FLASH_READY' or self.flash_state =='BATCH_COMPLETE' or
+                      self.flash_state =='BATCH_RETRANSMIT' ):
+                self.flash_state = 'SEND_BATCH'
+                self.sendNextBatch()
+            elif command == 'BATCH_COMPLETE_ACK' and self.flash_state =='SEND_BATCH':
+                self.flash_state = 'BATCH_COMPLETE'
+                self.continueTransfer() #also send CRC at end!
+            elif command == 'BATCH_RETRANSMIT_REQ' and self.flash_state =='BATCH_COMPLETE':
+                self.flash_state = 'BATCH_RETRANSMIT'
+                self.reTransfer() #also send CRC at end!
+            elif command == 'CRC_ACK' and self.flash_state =='BATCH_COMPLETE':
+                self.flash_state = 'CRC_OK'
+                self.sendResetReq()
+            elif command == 'APP_START_ACK' and self.flash_state =='CRC_OK':
+                return 'DONE'
+            else:
+                return 'UNKNOWN'
+        return 'OK'
+            
+    def 
+                
+            
+class ComManager(threading.Thread):
+    def __init__(self, receive_queue, send_queue):
+        super(ComManager, self).__init__()
+        self.logger = logging.getLogger('bsbmaster')
+        self.daemon = True
+        self.stopped = False
+        self.receive_queue = receive_queue
+        self.send_queue = send_queue
+        self.flash_connections = {}
+            
+    def run(self):
+        self.logger.info('ComManager started')
+        while not self.stopped:
+            while self.receive_queue:
+                container = receive_queue.get()
+                if container.sender in self.flash_connections:
+                    flash_connection = flash_connections[container.sender]
+                    flash_connection.processFrame(container)
+                else:
+                    flash_connection = FlashConnection(container.sender)
+                    flash_connections[container.sender] = flash_connection
+                    flash_connection.processFrame(container)
+        self.logger.info('Closing ComManager...')
+        try:
+            self.stop()
+        except Exception, e:
+            pass
+        self.logger.info('ComManager stopped')
+        
+    def stop(self):
+        self.stopped = True
+        self.disconnect()
+    
+    def deleteConnection(self,con_name):
+        del self.flash_connections[con_name]
+    
+    def triggerNode(self, node_id):
+        trigger_container = construct.Container{
+            frametype = 'CAN_MSG',
+            priority = 'REGULAR',
+            subnet = 'ZERO',
+            protocol = 'FLASH',
+            receiver = node_id,
+            sender = 'ADDR_GW',
+            construct.Container(
+                data_counter = 'COMMAND',
+                command = 'RESET_REQ'
+            )
+        )
+        self.send_queue.put(trigger_container)
+                            
 class CommandInterface:
     def open(self,host,port):
         self._connManager = ConnectionManager(host, port)
@@ -277,6 +369,8 @@ class ConnectionManager(threading.Thread):
         self.logger = logging.getLogger('sender')
         self.host = host
         self.port = port
+        self.receive_queue = Queue.queue
+        self.send_queue = Queue.queue
         self.connected = False
         self.stopped = False
         self.lastReceivedPlain = ''
@@ -291,7 +385,7 @@ class ConnectionManager(threading.Thread):
                     receiver = 'ADDR_BC',
                     sender = 'ADDR_GW',
                     length = 1,
-                    data = [0xFF],
+                    data = [0xFF]
         )
     
     def run(self):
@@ -313,7 +407,7 @@ class ConnectionManager(threading.Thread):
                                 try:
                                     if container['frametype'] == 'CAN_MSG':
                                         if container['protocol'] == 'FLASH':
-                                            pass
+                                            self.receive_queue.put(container)
                                     else:
                                         pass
                                 except Exception, e:
@@ -321,6 +415,10 @@ class ConnectionManager(threading.Thread):
                                     self.logger.exception(e)
                         else:
                             self.connectionReset()
+                        if self.send_queue:
+                            while self.send_queue:
+                                container = self.send_queue.get()
+                                self.sendContainer(container)                                
                 except socket.timeout, e:
                     pass
                 except Exception, e:
