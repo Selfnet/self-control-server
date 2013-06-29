@@ -92,8 +92,8 @@ class Sender():
         var = {}
         var['response'] = "timeout"
         def callback(container):
-            if container.leds == led:
-                var['response'] = container
+            if container.can_msg_data.leds == led:
+                var['response'] = container.can_msg_data
                 callbackEvent.set()
             else:
                 self._connManager.regGetColorCallback(callback)
@@ -109,6 +109,22 @@ class Sender():
     def setColorRGB(self, led, r, g, b):
         """Set permanent RGB color for LED to given RGB (0-255)."""
         self.logger.info("setting RGB color of led %d %03d|%03d|%03d"%(led,r,g,b))
+        
+        data_container = construct.Container(
+                mode = 'COLOR',
+                length = 7,
+                leds = led,
+                colormode = 'RGB',
+                time1 = 0,
+                color1 = r,
+                color2 = g,
+                color3 = b,
+        )
+        cont = self.ledBaseContainer
+        cont.update( construct.Container( can_msg_data = data_container ))
+        self._connManager.sendContainer(cont)
+        """
+        
         cont = self.ledBaseContainer
         cont.update(construct.Container(
                 mode = 'COLOR',
@@ -121,7 +137,7 @@ class Sender():
                 color3 = b,
             )
         )
-        self._connManager.sendContainer(cont)
+        self._connManager.sendContainer(cont) """
         #self._connManager.send(self.protocolArne.setColorRGB(0, r, g, b, led=led))
         #self._connManager.send(COMMANDS['setColorRGB'] + struct.pack('B', led) + struct.pack('B', r) + struct.pack('B', g) + struct.pack('B', b))
 
@@ -240,6 +256,9 @@ class Sender():
     def switchLight(self, room, light, on=True):
         """Turn light On and Off"""
         # remapping - can be removed in next release
+        lights = 0
+        if room == 0xFF:
+            lights = 0xFF
         if room == 2:
             if light == 1:
                 lights = 0b01000000 #u2 kalt
@@ -252,7 +271,7 @@ class Sender():
         elif room == 5:
             if light == 1:
                 lights = 0b00010000
-            elif light == 2:
+            else:
                 lights = 0b00001000
         data_container = construct.Container(
             lights = lights,
@@ -261,6 +280,30 @@ class Sender():
         cont = self.lightBaseContainer
         cont.update( construct.Container( can_msg_data = data_container ))
         self._connManager.sendContainer(cont)
+
+    def checkLight(self):
+        """Get current state of all lights"""
+        data_container = construct.Container(
+            status = 'GET_STATUS',
+            lights = 0
+        )
+        cont = self.lightBaseContainer
+        cont.update( construct.Container( can_msg_data = data_container ))
+        callbackEvent = threading.Event()
+        var = {}
+        var['response'] = "timeout"
+        def callback(container):
+            var['response'] = container
+            callbackEvent.set()
+        self._connManager.regGetLightCallback(callback)
+        self._connManager.sendContainer(cont)
+        callbackEvent.wait(timeout=5)
+        if callbackEvent.isSet():
+            print "Light Status: %s" % (bin(var['response'].can_msg_data.lights))
+        else:
+            print "Get lights request timed out!"
+        return var['response']
+    
 
     def ping(self,times=4,timeout=4,receiver='ADDR_LED',numPongs=1):
         """Ping the CAN-Nodes"""
@@ -325,6 +368,7 @@ class ConnectionManager(threading.Thread):
         self.ping = False
         self.pongCallbacks = []
         self.getColorCallbacks = []
+        self.getLightCallbacks = []
         self.pingContainer = construct.Container(
                     frametype = 'CAN_MSG',
                     priority = 'REGULAR',
@@ -361,10 +405,17 @@ class ConnectionManager(threading.Thread):
                                                 cb = self.pongCallbacks.pop()
                                                 cb(container)
                                         elif container['protocol'] == 'LED':
-                                            if container['mode'] == 'GETCOLORRESPONSE':
+                                            if container.can_msg_data.mode == 'GETCOLORRESPONSE':
                                                 for i in range(len(self.getColorCallbacks)):
                                                     cb = self.getColorCallbacks.pop()
                                                     cb(container)
+                                        elif container['protocol'] == 'LIGHT':
+                                            if container.can_msg_data.status == 'STATUS_RESPONSE':
+                                                for i in range(len(self.getLightCallbacks)):
+                                                    cb = self.getLightCallbacks.pop()
+                                                    cb(container)
+                                                    
+
                                 except Exception, e:
                                     self.logger.debug('exception when interpreting container: %s'%str(e))
                                     self.logger.exception(e)
@@ -400,7 +451,10 @@ class ConnectionManager(threading.Thread):
 
     def regGetColorCallback(self, cb):
         self.getColorCallbacks.append(cb)
-    
+
+    def regGetLightCallback(self, cb):
+        self.getLightCallbacks.append(cb)
+
     def connect(self):
         self.sendLock.acquire(False)
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
