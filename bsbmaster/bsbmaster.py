@@ -25,8 +25,10 @@
 import sys, getopt
 import serial
 import time
-import gatewaycom
+import math
 
+
+import gatewaycom
 import construct
 import protocol
 
@@ -62,8 +64,13 @@ class FlashConnection:
             receiver = node_id,
             sender = 'ADDR_GW'
         )
+        self.flash_size = 0
+        self.batch_size = 0
         self.total_bytes = None
         self.total_batches = None
+        self.data = None
+        self.batch_counter = 0
+        self.frame_counter = 0
         
     def processFrame(self,container)
         data = container.can_msg_data
@@ -78,7 +85,7 @@ class FlashConnection:
                 return 'ERROR'
             elif command == 'FLASH_ACK' and self.flash_state =='NODE_READY':
                 self.flash_state = 'FLASH_HANDSHAKE'
-                self.sendFlashDetails()
+                self.sendFlashDetails(data)
             elif command == 'FLASH_DETAILS_ACK' and self.flash_state =='FLASH_HANDSHAKE':
                 self.flash_state = 'FLASH_READY'
                 self.initTransfer('FIRST')
@@ -102,6 +109,10 @@ class FlashConnection:
                 return 'UNKNOWN'
         return 'OK'
             
+    def initData(self, data):
+        self.data = data
+        self.total_bytes = length(self.data)
+            
     def sendFlashRequest(self):
         cont = self.base_container
         data_cont = construct.Container(
@@ -111,7 +122,11 @@ class FlashConnection:
         cont.update( construct.Container( can_msg_data = data_cont ))
         self.send_queue.put(cont)
         
-    def sendFlashDetails(self):
+    def sendFlashDetails(self, data):
+        self.flash_size = data.flash_size
+        self.batch_size = data.batch_size
+        self.total_batches = math.ceil(self.total_bytes/6.0/self.batch_size)
+        
         cont = self.base_container
         data_cont = construct.Container(
             data_counter = 'COMMAND',
@@ -123,6 +138,21 @@ class FlashConnection:
         self.send_queue.put(cont)
         
     def initTransfer(self, order):
+        if order == 'FIRST':
+            self.battch_counter = 0
+        elif order == 'NEXT':
+            self.batch_counter = self.batch_counter + 1
+        elif order == 'LAST':
+            pass
+        
+        cont = self.base_container
+        data_cont = construct.Container(
+            data_counter = 'COMMAND',
+            command = 'BATCH_READY',
+            frame_number = self.batch_counter
+        )
+        cont.update( construct.Container( can_msg_data = data_cont ))
+        self.send_queue.put(cont)
     
     def sendNextBatch(self):
                 
@@ -201,6 +231,9 @@ class ComManager(threading.Thread):
             )
         )
         self.send_queue.put(start_container)
+    
+    def transferData(self, node_id, data):
+        
                             
 class CommandInterface:
     def _encode_addr(self, addr):

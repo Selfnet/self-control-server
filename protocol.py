@@ -68,18 +68,17 @@ can_proto_flash = Struct('can_proto_flash',
                 Switch('command',
                     {
                     'FLASH_ACK': Embed(Struct('node_details',
-                        UBInt16('flash_size'),
+                        UBInt32('flash_size'),
                         UBInt16('batch_size'),
-                        UBInt8('bootloader_version')
                     )),
                     'FLASH_DETAILS': Embed(Struct('flash_details',
                         UBInt32('total_bytes'),
-                        UBInt32('total_batches')
+                        UBInt16('total_batches')
                     )),
-                    'BATCH_READY': UBInt32('frame_number'),
-                    'BATCH_READY_ACK': UBInt32('frame_number'),
-                    'BATCH_COMPLETE': UBInt32('frame_number'),
-                    'BATCH_COMPLETE_ACK': UBInt32('frame_number'),
+                    'BATCH_READY': UBInt32('batch_number'),
+                    'BATCH_READY_ACK': UBInt32('batch_number'),
+                    'BATCH_COMPLETE': UBInt32('batch_number'),
+                    'BATCH_COMPLETE_ACK': UBInt32('batch_number'),
                     'CRC': UBInt32('crc'),
                     'CRC_ACK': UBInt32('crc')  
                     },
