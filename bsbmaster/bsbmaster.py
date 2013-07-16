@@ -25,6 +25,13 @@
 import sys, getopt
 import serial
 import time
+import math
+
+
+import gatewaycom
+import construct
+import protocol
+
 
 try:
     from progressbar import *
@@ -44,10 +51,26 @@ class CmdException(Exception):
     pass
 
 class FlashConnection:
-    def __init__(self, conManager, sender_id, flash_state='INIT'):
+    def __init__(self, conManager, node_id, send_queue, flash_state='INIT'):
         self.conManager = conManager
         self.sender_id = sender_id
         self.flash_state = flash_state
+        self.send_queue = send_queue
+        self.base_container = construct.Container{
+            frametype = 'CAN_MSG',
+            priority = 'REGULAR',
+            subnet = 'ZERO',
+            protocol = 'FLASH',
+            receiver = node_id,
+            sender = 'ADDR_GW'
+        )
+        self.flash_size = 0
+        self.batch_size = 0
+        self.total_bytes = None
+        self.total_batches = None
+        self.data = None
+        self.batch_counter = 0
+        self.frame_counter = 0
         
     def processFrame(self,container)
         data = container.can_msg_data
@@ -57,14 +80,15 @@ class FlashConnection:
                 self.flash_state = 'NODE_RESET'
             elif command == 'BOOTLOADER_READY':
                 self.flash_state = 'NODE_READY'
+                self.sendFlashRequest()
             elif command == 'BOOTLOADER_ERROR':
                 return 'ERROR'
             elif command == 'FLASH_ACK' and self.flash_state =='NODE_READY':
                 self.flash_state = 'FLASH_HANDSHAKE'
-                self.sendFlashDetails()
+                self.sendFlashDetails(data)
             elif command == 'FLASH_DETAILS_ACK' and self.flash_state =='FLASH_HANDSHAKE':
                 self.flash_state = 'FLASH_READY'
-                self.initTransfer()
+                self.initTransfer('FIRST')
             elif command == 'BATCH_READY_ACK' and
                     ( self.flash_state =='FLASH_READY' or self.flash_state =='BATCH_COMPLETE' or
                       self.flash_state =='BATCH_RETRANSMIT' ):
@@ -72,44 +96,94 @@ class FlashConnection:
                 self.sendNextBatch()
             elif command == 'BATCH_COMPLETE_ACK' and self.flash_state =='SEND_BATCH':
                 self.flash_state = 'BATCH_COMPLETE'
-                self.continueTransfer() #also send CRC at end!
+                self.initTransfer('NEXT') #also send CRC at end!
             elif command == 'BATCH_RETRANSMIT_REQ' and self.flash_state =='BATCH_COMPLETE':
                 self.flash_state = 'BATCH_RETRANSMIT'
-                self.reTransfer() #also send CRC at end!
+                self.initTransfer('LAST') #also send CRC at end!
             elif command == 'CRC_ACK' and self.flash_state =='BATCH_COMPLETE':
                 self.flash_state = 'CRC_OK'
-                self.sendResetReq()
-            elif command == 'APP_START_ACK' and self.flash_state =='CRC_OK':
+                return 'DONE'
+            elif command == 'APP_START_ACK':
                 return 'DONE'
             else:
                 return 'UNKNOWN'
         return 'OK'
             
-    def 
+    def initData(self, data):
+        self.data = data
+        self.total_bytes = length(self.data)
+            
+    def sendFlashRequest(self):
+        cont = self.base_container
+        data_cont = construct.Container(
+            data_counter = 'COMMAND',
+            command = 'FLASH_REQ'
+        )
+        cont.update( construct.Container( can_msg_data = data_cont ))
+        self.send_queue.put(cont)
+        
+    def sendFlashDetails(self, data):
+        self.flash_size = data.flash_size
+        self.batch_size = data.batch_size
+        self.total_batches = math.ceil(self.total_bytes/6.0/self.batch_size)
+        
+        cont = self.base_container
+        data_cont = construct.Container(
+            data_counter = 'COMMAND',
+            command = 'FLASH_DETAILS',
+            total_bytes = self.total_bytes,
+            total_batches = self.total_batches
+        )
+        cont.update( construct.Container( can_msg_data = data_cont ))
+        self.send_queue.put(cont)
+        
+    def initTransfer(self, order):
+        if order == 'FIRST':
+            self.battch_counter = 0
+        elif order == 'NEXT':
+            self.batch_counter = self.batch_counter + 1
+        elif order == 'LAST':
+            pass
+        
+        cont = self.base_container
+        data_cont = construct.Container(
+            data_counter = 'COMMAND',
+            command = 'BATCH_READY',
+            frame_number = self.batch_counter
+        )
+        cont.update( construct.Container( can_msg_data = data_cont ))
+        self.send_queue.put(cont)
+    
+    def sendNextBatch(self):
                 
             
 class ComManager(threading.Thread):
-    def __init__(self, receive_queue, send_queue):
+    def __init__(self, host, port):
         super(ComManager, self).__init__()
         self.logger = logging.getLogger('bsbmaster')
         self.daemon = True
         self.stopped = False
-        self.receive_queue = receive_queue
-        self.send_queue = send_queue
+        self.receive_queue = Queue.Queue()
+        self.send_queue = Queue.Queue()
         self.flash_connections = {}
+        self._connManager = gatewaycom.ConnectionManager(host, port, receive_queue, send_queue)
+        self._connManager.start()
             
     def run(self):
         self.logger.info('ComManager started')
         while not self.stopped:
             while self.receive_queue:
+                con_status = None
+                flash_connection = None
                 container = receive_queue.get()
                 if container.sender in self.flash_connections:
-                    flash_connection = flash_connections[container.sender]
-                    flash_connection.processFrame(container)
+                    flash_connection = flash_connections[container.sender]                    
                 else:
                     flash_connection = FlashConnection(container.sender)
                     flash_connections[container.sender] = flash_connection
-                    flash_connection.processFrame(container)
+                con_status = flash_connection.processFrame(container)
+                if con_status in ['DONE','UNKNOWN','ERROR']:
+                    del self.flash_connections[flash_connection]
         self.logger.info('Closing ComManager...')
         try:
             self.stop()
@@ -118,11 +192,15 @@ class ComManager(threading.Thread):
         self.logger.info('ComManager stopped')
         
     def stop(self):
+        try:
+            self._connManager.stop()
+        except: Exception, e:
+           self.logger.info("Exception when stopping ConnectionManager!")
+            self.logger.info(e)
         self.stopped = True
-        self.disconnect()
     
     def deleteConnection(self,con_name):
-        del self.flash_connections[con_name]
+        
     
     def triggerNode(self, node_id):
         trigger_container = construct.Container{
@@ -132,66 +210,32 @@ class ComManager(threading.Thread):
             protocol = 'FLASH',
             receiver = node_id,
             sender = 'ADDR_GW',
-            construct.Container(
+            can_msg_data = construct.Container(
                 data_counter = 'COMMAND',
                 command = 'RESET_REQ'
             )
         )
         self.send_queue.put(trigger_container)
+        
+    def startNodeApp(self, node_id):
+        start_container = construct.Container{
+            frametype = 'CAN_MSG',
+            priority = 'REGULAR',
+            subnet = 'ZERO',
+            protocol = 'FLASH',
+            receiver = node_id,
+            sender = 'ADDR_GW',
+            can_msg_data = construct.Container(
+                data_counter = 'COMMAND',
+                command = 'APP_START_REQ'
+            )
+        )
+        self.send_queue.put(start_container)
+    
+    def transferData(self, node_id, data):
+        
                             
 class CommandInterface:
-    def open(self,host,port):
-        self._connManager = ConnectionManager(host, port)
-        self._connManager.start()
-
-    def initChip(self):
-
-        return self._wait_for_ask("Syncro")
-
-    def releaseChip(self):
-        self.sp.setRTS(1)
-        self.reset()
-
-    def cmdGeneric(self, cmd):
-        self.sp.write(chr(cmd))
-        self.sp.write(chr(cmd ^ 0xFF)) # Control byte
-        return self._wait_for_ask(hex(cmd))
-
-    def cmdGet(self):
-        if self.cmdGeneric(0x00):
-            mdebug(10, "*** Get command");
-            len = ord(self.sp.read())
-            version = ord(self.sp.read())
-            mdebug(10, "    Bootloader version: "+hex(version))
-            dat = map(lambda c: hex(ord(c)), self.sp.read(len))
-            mdebug(10, "    Available commands: "+str(dat))
-            self._wait_for_ask("0x00 end")
-            return version
-        else:
-            raise CmdException("Get (0x00) failed")
-
-    def cmdGetVersion(self):
-        if self.cmdGeneric(0x01):
-            mdebug(10, "*** GetVersion command")
-            version = ord(self.sp.read())
-            self.sp.read(2)
-            self._wait_for_ask("0x01 end")
-            mdebug(10, "    Bootloader version: "+hex(version))
-            return version
-        else:
-            raise CmdException("GetVersion (0x01) failed")
-
-    def cmdGetID(self):
-        if self.cmdGeneric(0x02):
-            mdebug(10, "*** GetID command")
-            len = ord(self.sp.read())
-            id = self.sp.read(len+1)
-            self._wait_for_ask("0x02 end")
-            return id
-        else:
-            raise CmdException("GetID (0x02) failed")
-
-
     def _encode_addr(self, addr):
         byte3 = (addr >> 0) & 0xFF
         byte2 = (addr >> 8) & 0xFF
@@ -266,48 +310,6 @@ class CommandInterface:
         else:
             raise CmdException("Erase memory (0x43) failed")
 
-    def cmdWriteProtect(self, sectors):
-        if self.cmdGeneric(0x63):
-            mdebug(10, "*** Write protect command")
-            self.sp.write(chr((len(sectors)-1) & 0xFF))
-            crc = 0xFF
-            for c in sectors:
-                crc = crc ^ c
-                self.sp.write(chr(c))
-            self.sp.write(chr(crc))
-            self._wait_for_ask("0x63 write protect failed")
-            mdebug(10, "    Write protect done")
-        else:
-            raise CmdException("Write Protect memory (0x63) failed")
-
-    def cmdWriteUnprotect(self):
-        if self.cmdGeneric(0x73):
-            mdebug(10, "*** Write Unprotect command")
-            self._wait_for_ask("0x73 write unprotect failed")
-            self._wait_for_ask("0x73 write unprotect 2 failed")
-            mdebug(10, "    Write Unprotect done")
-        else:
-            raise CmdException("Write Unprotect (0x73) failed")
-
-    def cmdReadoutProtect(self):
-        if self.cmdGeneric(0x82):
-            mdebug(10, "*** Readout protect command")
-            self._wait_for_ask("0x82 readout protect failed")
-            self._wait_for_ask("0x82 readout protect 2 failed")
-            mdebug(10, "    Read protect done")
-        else:
-            raise CmdException("Readout protect (0x82) failed")
-
-    def cmdReadoutUnprotect(self):
-        if self.cmdGeneric(0x92):
-            mdebug(10, "*** Readout Unprotect command")
-            self._wait_for_ask("0x92 readout unprotect failed")
-            self._wait_for_ask("0x92 readout unprotect 2 failed")
-            mdebug(10, "    Read Unprotect done")
-        else:
-            raise CmdException("Readout unprotect (0x92) failed")
-
-
 # Complex commands section
 
     def readMemory(self, addr, lng):
@@ -360,163 +362,6 @@ class CommandInterface:
 
 	def __init__(self) :
         pass
-
-
-
-class ConnectionManager(threading.Thread):
-    def __init__(self,  host, port):
-        super(ConnectionManager, self).__init__()
-        self.logger = logging.getLogger('sender')
-        self.host = host
-        self.port = port
-        self.receive_queue = Queue.queue
-        self.send_queue = Queue.queue
-        self.connected = False
-        self.stopped = False
-        self.lastReceivedPlain = ''
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.daemon = True
-        self.pongCallbacks = []
-        self.pingContainer = construct.Container(
-                    frametype = 'CAN_MSG',
-                    priority = 'REGULAR',
-                    subnet = 'ZERO',
-                    protocol = 'PING',
-                    receiver = 'ADDR_BC',
-                    sender = 'ADDR_GW',
-                    length = 1,
-                    data = [0xFF]
-        )
-    
-    def run(self):
-        print 'ConnectionManager started. Trying to connect...'
-        self.logger.info('ConnectionManager started. Trying to connect...')
-        while not self.stopped:
-            if not self.connected:
-                self.tryconnect()
-            else:
-                try:
-                    received = None
-                    received = self.sock.recv(4096)
-                    if not self.stopped:
-                        if received:
-                            self.logger.debug("received unicode: %s"%str(received))
-                            self.logger.debug("received hex: %s"%Helper.hexdump(received))
-                            for container in protocol.PacketHandler().parse(received):
-                                self.logger.debug('Received container %s'%str(container))
-                                try:
-                                    if container['frametype'] == 'CAN_MSG':
-                                        if container['protocol'] == 'FLASH':
-                                            self.receive_queue.put(container)
-                                    else:
-                                        pass
-                                except Exception, e:
-                                    self.logger.debug('exception when interpreting container: %s'%str(e))
-                                    self.logger.exception(e)
-                        else:
-                            self.connectionReset()
-                        if self.send_queue:
-                            while self.send_queue:
-                                container = self.send_queue.get()
-                                self.sendContainer(container)                                
-                except socket.timeout, e:
-                    pass
-                except Exception, e:
-                    self.logger.debug('in statechecker exception: %s'%str(e))
-                    self.logger.exception(e)
-                    self.connectionReset()
-                    
-        self.logger.info('Closing connection...')
-        try:
-            self.stop()
-        except Exception, e:
-            pass
-        self.logger.info('Connection closed, ConnectionManager stopped')
-    
-    def connectionReset(self):
-        self.logger.debug("connection reset")
-        print "Connection lost. Reconnecting..."
-        self.connected = False
-        self.lastReceived = 'Connection error'
-    
-    def connect(self):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.settimeout(1)
-        self.sock.connect((self.host, self.port))
-        self.connected = True
-        self.logger.debug("connection established")
-        print "Connected to %s:%d"%(self.host,self.port)
-    
-    def stop(self):
-        self.stopped = True
-        self.disconnect()
-    
-    def disconnect(self):
-        self.sock.close()
-        self.logger.debug("disconnect")
-        self.connected = False
-    
-    def tryconnect(self):
-        try:
-            self.disconnect()
-        except:
-            pass
-        self.logger.debug("Trying to connect...")
-        while not self.connected and not self.stopped:
-            try:
-                self.connect()
-                self.logger.info("Connected to %s:%d"%(self.host,self.port))
-            except socket.timeout:
-                pass
-            except Exception, e:
-                self.logger.info(e)
-                time.sleep(0.1)
-                self.logger.debug("Trying to connect...")
-                
-    def sendContainer(self,container,log=True):
-        ret = 0
-        payload = ''
-        
-        try:
-            payload = protocol.gw_msg.build(container)
-        except Exception,e:
-            self.logger.error('Cannot build container: %s'%str(container))
-            self.logger.error('Exception when building container: %s'%str(e))
-            self.logger.exception(e)
-            ret = 1
-
-        #hexdump = Helper.hexdump(payload)
-        #bindump = Helper.bindump(payload)
-        if log:
-            logging.getLogger('sender').debug('Sending container\n%s\n' % str(container))
-            print "test"
-        self.send(payload, log)
-
-    def send(self, msg, log=True):
-        if self.connected:
-            if log:
-                self.logger.debug("waiting for sendLock...")
-            if log:
-                self.logger.debug("sendLock acquired")
-                self.logger.info("sending unicode \t%s"%msg)
-            hexmsg = ''
-            binmsg = ''
-            for c in msg:
-                binmsg += Helper.format8bit(bin(struct.unpack('B',c)[0])) + ' '
-                hexmsg += hex(struct.unpack('B',c)[0]) + ' '
-            if log:
-                self.logger.info("sending binary %s"%binmsg)
-                self.logger.info("sending hex %s"%Helper.hexdump(msg))
-            try:
-                self.sock.sendall(msg)
-            except Exception, e:
-                self.logger.warn('Exception when sending: %s'%str(e))
-                print "Connection error. Reconnecting..."
-                self.connectionReset()
-        else:
-            self.logger.warn("Not sent. Socket not connected")
-
-
 
 
 def usage():
