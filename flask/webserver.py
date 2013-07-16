@@ -24,6 +24,14 @@ def switchLight(room,light,on):
 
 last_lights = {'time':0, 'lights':0}
 
+@app.route("/lights/get/" , methods=['GET', 'POST'])
+def checkLights():
+    if last_lights['time'] < time.time()-10:
+        last_lights['time'] = time.time()
+        last_lights['lights'] = s.checkLight().can_msg_data.lights
+    l = last_lights['lights']
+    return jsonify({'state': l})
+
 @app.route("/U<int:room>/light/get/<int:light>/" , methods=['GET', 'POST'])
 def checkLight(room,light):
     print room,light

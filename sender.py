@@ -638,8 +638,6 @@ def main():
     #end fancy startup shit
     #######################
 
-    __builtins__.s = Sender()
-    
     __builtins__.logManager = LogManager()
     
     try:
@@ -672,6 +670,8 @@ def main():
         print '\n\n\nExiting...'
         import sys
         sys.exit(1)
+
+    __builtins__.s = Sender()
 
     #from libs.module_reloading_console import ModuleReloadingConsole
     import code

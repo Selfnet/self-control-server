@@ -35,7 +35,7 @@ can_proto_sync = Struct('can_proto_sync',
         TOGGLE = 0x02,
     ),
 )
-
+"""
 can_proto_flash = Struct('can_proto_flash',
     Enum(UBInt16('data_counter'),
         COMMAND = 0xFFFF,
@@ -88,9 +88,8 @@ can_proto_flash = Struct('can_proto_flash',
             ))
         }
     )
-)          
-                
-    
+)
+"""
 
 can_proto_light = Struct('can_proto_light',
     Byte('lights'),
@@ -130,6 +129,34 @@ can_proto_acstate = Struct('can_proto_acstate',
         ON = 0b00000000,
         OFF = 0b00010000,
         _default_ = 'UNKNOWN',
+    ),
+)
+
+
+can_proto_ledstripe_modes = {
+    'MASTER' : 0x01,
+    'COLOR' : 0x02,
+    'FADE' : 0x03,
+    'COLOR' : 0x04,
+    'AUTO' : 0x05,
+    'STROBE' : 0x06,
+    'CYCLE' : 0x07,
+    'FADEMASTER' : 0x08,
+    'POLICE' : 0x09,
+    'GETCOLORRESPONSE' : 0xFE,
+    'GETCOLOR' : 0xFF,
+    '_default_' : 'AUTO'
+    }
+
+can_proto_ledstripe = Struct('can_proto_ledstripe',
+    Enum(Byte('mode'),**can_proto_ledstripe_modes),
+    Switch('modeselect', lambda ctx: ctx['mode'], {
+        'COLOR': Embed( Struct('params',
+                        ULInt8('color1'),
+                        ULInt8('color2'),
+                        ULInt8('color3'),
+                 ),),
+    },
     ),
 )
 
@@ -220,6 +247,7 @@ can_node_addr_defs = [
     ['ADDR_GW0', 0x20],
     ['ADDR_GW1', 0x21],
     ['ADDR_LED', 0x40],
+    ['ADDR_LEDSTRIPE', 0x44],
     ['ADDR_LIGHT', 0x80],
     ['ADDR_BC', 0xFF],
     ['_default_', 'UNKNOWN']
@@ -232,6 +260,7 @@ can_protocol_defs = [
     [can_proto_sync,'SYNC',0x0A],
     [can_proto_acstate, 'ACSTATE', 0xA0],
     [can_proto_led,'LED',0xC0],
+    [can_proto_ledstripe,'LEDSTRIPE',0xCC],
     [can_proto_light,'LIGHT',0xD0],
     [can_proto_generic,'UNKNOWN',None]
     ]

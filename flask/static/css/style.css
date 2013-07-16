@@ -6,12 +6,26 @@ body {
     text-align: center;
 }
 
+
 .roomwrapper {
     border: 1px black solid;
     margin: 30px;
     padding: 0px;
-    width: 350px;
+    width: 400px;
     float: left;
+}
+
+.ui-button {
+    height: 30px;
+    width: 50px;
+}
+
+.room {
+    text-align: center;
+    height: 550px;
+    margin: 0px;
+    padding: 10px;
+    border: 1px black solid;
 }
 
 .roomwrapper:after {
@@ -24,10 +38,3 @@ body {
     border: 20px black solid;
 }
 
-.room {
-    text-align: center;
-    height: 500px;
-    margin: 0px;
-    padding: 10px;
-    border: 1px black solid;
-}
