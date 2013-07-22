@@ -3,15 +3,62 @@ from flask import Flask, jsonify, render_template, abort
 import BaseHTTPServer
 import sender
 import time
+import subprocess
+
+#falid state: off,on,start
+pcs_u3 = [{'name':'tr01','status':'off','mac':'14:da:e9:de:d5:75','ip':'10.43.101.1'}, {'name':'tr02','status':'off','mac':'14:da:e9:de:d5:7A','ip':'10.43.102.1'}, 
+            {'name':'tr03','status':'off','mac':'14:da:e9:de:d5:09','ip':'10.43.103.1'}, {'name':'tr04','status':'off','mac':'14:da:e9:de:d5:5c','ip':'10.43.104.1'},
+            {'name':'tr05','status':'off','mac':'14:da:e9:de:d5:d4','ip':'10.43.105.1'}, {'name':'tr06','status':'off','mac':'14:da:e9:de:d5:7e','ip':'10.43.106.1'}, 
+            {'name':'tr07','status':'off','mac':'14:da:e9:de:d4:df','ip':'10.43.107.1'}, {'name':'tr08','status':'off','mac':'4:da:e9:de:d6:27','ip':'10.43.108.1'}]
+
+pcs_u4 = [{'name':'tr09','status':'off','mac':'14:da:e9:de:d5:82','ip':'10.43.109.1'}, {'name':'tr10','status':'off','mac':'14:da:e9:de:d5:70','ip':'10.43.110.1'}, 
+            {'name':'tr11','status':'off','mac':'14:da:e9:de:d4:e0','ip':'10.43.111.1'}, {'name':'tr12','status':'off','mac':'14:da:e9:de:d5:79','ip':'10.43.112.1'},
+            {'name':'tr13','status':'off','mac':'14:da:e9:de:d5:55','ip':'10.43.113.1'}, {'name':'tr14','status':'off','mac':'14:DA:E9:DE:D4:C4','ip':'10.43.114.1'}, 
+            {'name':'tr15','status':'off','mac':'14:da:e9:de:d4:ed','ip':'10.43.115.1'}, {'name':'tr16','status':'off','mac':'14:da:e9:de:d5:0f','ip':'10.43.116.1'}]
+
+
+def updateStatus():
+    from threading import Timer
+
+    def ping(ip):
+        p = subprocess.Popen( ("ping -c1 %s" %(ip)).split(),
+                          shell=False,
+                          stdout=subprocess.PIPE)
+        p.communicate()
+        return p.returncode
+
+    for pc in pcs_u3+pcs_u4:
+        s = ping(pc['ip'])
+        if s == 0: #online
+            pc['status'] = 'on'
+        elif s == 1: #offline
+            pc['status'] = 'off'
+    t = Timer(10.0, updateStatus)
+    t.start()
+
+
 app = Flask(__name__)
 
 __builtins__.s = sender.Sender()
-
 __builtins__.lights = 0;
+
 
 @app.route("/")
 def index():
-    return render_template('index.html')
+    return render_template('index.html' , tab=0,  pcs_u4=pcs_u4 , pcs_u3=pcs_u3 )
+
+
+@app.route("/wol/tr<int:tr>/")
+def wake(tr):
+    from subprocess import call
+    for pc in pcs_u3+pcs_u4:
+        if pc['name'] == 'tr%02d'%tr:
+            mac = pc['mac']
+            pc['status'] = 'start'
+            break
+    print 'waking up mac:',mac
+    call(["/usr/bin/wakeonlan", mac])
+    return render_template('index.html' , tab=1 , pcs_u4=pcs_u4 , pcs_u3=pcs_u3 )
 
 
 @app.route("/U<int:room>/light/set/<int:light>/<int:on>/" , methods=['GET', 'POST'])
@@ -85,6 +132,8 @@ if __name__ == "__main__":
     from tornado.wsgi import WSGIContainer
     from tornado.httpserver import HTTPServer
     from tornado.ioloop import IOLoop
+
+    updateStatus()
 
     http_server = HTTPServer(WSGIContainer(app))
     http_server.listen(8080)

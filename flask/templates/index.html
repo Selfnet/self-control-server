@@ -1,5 +1,49 @@
 {% extends "base.html" %}
 
+{% block content_wol %}
+    <div class="roomwrapper">
+        <div id="U5" class="roomlight">
+            <div class="room">
+                <h1>U5</h2>
+            </div>
+        </div>
+    </div>
+    <div class="roomwrapper">
+        <div id="U4" class="roomlight">
+            <div class="room" class="wol">
+                <h1>U4</h2>
+                <table style="width:100%;"><tr>
+{% for pc in pcs_u4 %}
+    {% if pc.name == 'tr09' or pc.name == 'tr11' or pc.name == 'tr13' or pc.name == 'tr15' %}</tr><tr>{% endif %}
+                   <td><a href="/wol/{{pc.name}}" title="{{pc.name}}"><img alt="{{pc.pos}}" title="{{pc.pos}}" src="/static/images/wol_{{pc.status}}.png"></a></td>
+{% endfor %}
+                </tr></table>
+            </div>
+        </div>
+    </div>
+    <div class="roomwrapper">
+        <div id="U3" class="roomlight">
+            <div class="room" class="wol">
+                <h1>U3</h2>
+                <table style="width:100%;"><tr>
+{% for pc in pcs_u3 %}
+    {% if pc.name == 'tr03' or pc.name == 'tr05' or pc.name == 'tr07' or pc.name == 'tr09' %}</tr><tr>{% endif %}
+                   <td><a href="/wol/{{pc.name}}" title="{{pc.name}}"><img alt="{{pc.pos}}" title="{{pc.pos}}" src="/static/images/wol_{{pc.status}}.png"></a></td>
+{% endfor %}
+                </tr></table>
+            </div>
+        </div>
+    </div>
+    <div class="roomwrapper">
+        <div id="U2" class="roomlight">
+            <div class="room">
+                <h1>U2</h2>
+            </div>
+        </div>
+    </div>
+
+{% endblock %}
+
 {% block content %}
     <div class="roomwrapper">
         <div id="U5" class="roomlight">

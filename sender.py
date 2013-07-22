@@ -509,7 +509,6 @@ class ConnectionManager(threading.Thread):
         #bindump = Helper.bindump(payload)
         if log:
             logging.getLogger('sender').debug('Sending container\n%s\n' % str(container))
-            print "test"
         self.send(payload, log)
 
     def send(self, msg, log=True):
