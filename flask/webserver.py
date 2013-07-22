@@ -39,8 +39,8 @@ def updateStatus():
 
 app = Flask(__name__)
 
-__builtins__.s = sender.Sender()
-__builtins__.lights = 0;
+s = sender.Sender()
+lights = 0;
 
 
 @app.route("/")

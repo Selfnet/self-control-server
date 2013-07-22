@@ -38,3 +38,10 @@ body {
     border: 20px black solid;
 }
 
+.ui-tabs .ui-tabs-nav li a {
+    padding-top: 5px;
+    padding-left: 10px;
+    padding-right: 10px;
+    font-size: 20px;
+}
+
