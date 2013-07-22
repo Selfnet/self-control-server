@@ -5,6 +5,9 @@ import sender
 import time
 import subprocess
 
+from subprocess import call
+from threading import Timer
+
 #falid state: off,on,start
 pcs_u3 = [{'name':'tr01','status':'off','mac':'14:da:e9:de:d5:75','ip':'10.43.101.1'}, {'name':'tr02','status':'off','mac':'14:da:e9:de:d5:7A','ip':'10.43.102.1'}, 
             {'name':'tr03','status':'off','mac':'14:da:e9:de:d5:09','ip':'10.43.103.1'}, {'name':'tr04','status':'off','mac':'14:da:e9:de:d5:5c','ip':'10.43.104.1'},
@@ -16,10 +19,7 @@ pcs_u4 = [{'name':'tr09','status':'off','mac':'14:da:e9:de:d5:82','ip':'10.43.10
             {'name':'tr13','status':'off','mac':'14:da:e9:de:d5:55','ip':'10.43.113.1'}, {'name':'tr14','status':'off','mac':'14:DA:E9:DE:D4:C4','ip':'10.43.114.1'}, 
             {'name':'tr15','status':'off','mac':'14:da:e9:de:d4:ed','ip':'10.43.115.1'}, {'name':'tr16','status':'off','mac':'14:da:e9:de:d5:0f','ip':'10.43.116.1'}]
 
-
 def updateStatus():
-    from threading import Timer
-
     def ping(ip):
         p = subprocess.Popen( ("ping -c1 %s" %(ip)).split(),
                           shell=False,
@@ -36,6 +36,9 @@ def updateStatus():
     t = Timer(10.0, updateStatus)
     t.start()
 
+#start the first update
+t = Timer(10.0, updateStatus)
+t.start()
 
 app = Flask(__name__)
 
@@ -50,7 +53,6 @@ def index():
 
 @app.route("/wol/tr<int:tr>/")
 def wake(tr):
-    from subprocess import call
     for pc in pcs_u3+pcs_u4:
         if pc['name'] == 'tr%02d'%tr:
             mac = pc['mac']
@@ -132,8 +134,6 @@ if __name__ == "__main__":
     from tornado.wsgi import WSGIContainer
     from tornado.httpserver import HTTPServer
     from tornado.ioloop import IOLoop
-
-    updateStatus()
 
     http_server = HTTPServer(WSGIContainer(app))
     http_server.listen(8080)

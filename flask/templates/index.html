@@ -15,7 +15,7 @@
                 <table style="width:100%;"><tr>
 {% for pc in pcs_u4 %}
     {% if pc.name == 'tr09' or pc.name == 'tr11' or pc.name == 'tr13' or pc.name == 'tr15' %}</tr><tr>{% endif %}
-                   <td><a href="/wol/{{pc.name}}" title="{{pc.name}}"><img alt="{{pc.pos}}" title="{{pc.pos}}" src="/static/images/wol_{{pc.status}}.png"></a></td>
+                   <td><a href="/wol/{{pc.name}}" title="{{pc.name}}"><b>{{pc.name}}:</b><img alt="{{pc.pos}}" title="{{pc.pos}}" src="/static/images/wol_{{pc.status}}.png"></a></td>
 {% endfor %}
                 </tr></table>
             </div>
@@ -28,7 +28,7 @@
                 <table style="width:100%;"><tr>
 {% for pc in pcs_u3 %}
     {% if pc.name == 'tr03' or pc.name == 'tr05' or pc.name == 'tr07' or pc.name == 'tr09' %}</tr><tr>{% endif %}
-                   <td><a href="/wol/{{pc.name}}" title="{{pc.name}}"><img alt="{{pc.pos}}" title="{{pc.pos}}" src="/static/images/wol_{{pc.status}}.png"></a></td>
+                   <td><a href="/wol/{{pc.name}}" title="{{pc.name}}"><b>{{pc.name}}:</b><img alt="{{pc.pos}}" title="{{pc.pos}}" src="/static/images/wol_{{pc.status}}.png"></a></td>
 {% endfor %}
                 </tr></table>
             </div>
@@ -204,6 +204,47 @@ function init_rooms() {
             });
         }
     );
+    
+    $.get('/lights/get/', function(data) {
+        data = data.state;
+        if( (data & 64) > 0)  //u21
+            $('#warmlights_on').attr("checked","checked");
+        else
+            $('#warmlights_off').attr("checked","checked");
+
+        if ( (data & 128) > 0) //u22
+            $('#coldlights_on').attr("checked","checked");
+        else
+            $('#coldlights_off').attr("checked","checked");
+
+        if ( (data & 32) > 0) //u3
+            $('#lights31_on').attr("checked","checked");
+        else
+            $('#lights31_off').attr("checked","checked");
+
+        if ( (data & 4) > 0) //u4
+            $('#lights41_on').attr("checked","checked");
+        else
+            $('#lights41_off').attr("checked","checked");
+
+        if ( (data & 16) > 0) //u51
+            $('#lights51_on').attr("checked","checked");
+        else
+            $('#lights51_off').attr("checked","checked");
+
+        if ( (data & 8) > 0) //u52
+            $('#lights52_on').attr("checked","checked");
+        else
+            $('#lights52_off').attr("checked","checked");
+            
+        $('#coldlights').buttonset("refresh");
+        $('#warmlights').buttonset("refresh");
+        $('#lights31').buttonset("refresh");
+        $('#lights41').buttonset("refresh");
+        $('#lights51').buttonset("refresh");
+        $('#lights52').buttonset("refresh");
+    });
+    
 }
 
 $(function() {
